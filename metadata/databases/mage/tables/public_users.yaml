@@ -1,0 +1,25 @@
+table:
+  name: users
+  schema: public
+array_relationships:
+  - name: appeals
+    using:
+      foreign_key_constraint_on:
+        column: user_id
+        table:
+          name: appeals
+          schema: public
+  - name: question_informations
+    using:
+      foreign_key_constraint_on:
+        column: person_in_charge
+        table:
+          name: question_information
+          schema: public
+  - name: user_courses
+    using:
+      foreign_key_constraint_on:
+        column: itsc
+        table:
+          name: user_course
+          schema: public

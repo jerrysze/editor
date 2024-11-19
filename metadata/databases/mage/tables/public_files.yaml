@@ -1,0 +1,33 @@
+table:
+  name: files
+  schema: public
+object_relationships:
+  - name: exam
+    using:
+      foreign_key_constraint_on: exam_id
+array_relationships:
+  - name: error_submissions
+    using:
+      foreign_key_constraint_on:
+        column: file_id
+        table:
+          name: error_submissions
+          schema: public
+  - name: submissions
+    using:
+      foreign_key_constraint_on:
+        column: file_id
+        table:
+          name: submissions
+          schema: public
+event_triggers:
+  - name: file_trigger
+    definition:
+      enable_manual: false
+      insert:
+        columns: '*'
+    retry_conf:
+      interval_sec: 10
+      num_retries: 0
+      timeout_sec: 60
+    webhook: http://192.168.31.16:5000/trigger/files

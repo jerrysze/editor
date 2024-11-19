@@ -3,18 +3,27 @@
 import { Inter } from 'next/font/google'
 import Sidebar from './components/Sidebar'
 import { Box, ThemeProvider, createTheme, CssBaseline } from '@mui/material'
+import { ActiveFileProvider } from './contexts/ActiveFileContext';
 
 const inter = Inter({ subsets: ['latin'] })
 
 const theme = createTheme({
   palette: {
     background: {
-      sidebar: '#FFFAF0', // Very light blue color
+      sidebar: '#FFFAF0',
+    },
+  },
+  components: {
+    MuiDrawer: {
+      styleOverrides: {
+        paper: {
+          userSelect: 'none', // Prevent text selection while resizing
+        },
+      },
     },
   },
 });
 
-// Add this to extend the theme type
 declare module '@mui/material/styles' {
   interface TypeBackground {
     sidebar: string;
@@ -31,12 +40,23 @@ export default function RootLayout({
       <body className={inter.className}>
         <ThemeProvider theme={theme}>
           <CssBaseline />
-          <Box sx={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
-            <Sidebar />
-            <Box component="main" sx={{ flexGrow: 1, overflow: 'auto' }}>
-              {children}
+          <ActiveFileProvider>
+            <Box sx={{ 
+              display: 'flex', 
+              height: '100vh', 
+              overflow: 'hidden',
+              position: 'relative',
+            }}>
+              <Sidebar />
+              <Box component="main" sx={{ 
+                flexGrow: 1, 
+                overflow: 'auto',
+                position: 'relative',
+              }}>
+                {children}
+              </Box>
             </Box>
-          </Box>
+          </ActiveFileProvider>
         </ThemeProvider>
       </body>
     </html>

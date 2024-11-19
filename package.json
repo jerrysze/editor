@@ -13,11 +13,15 @@
     "@emotion/styled": "^11.13.0",
     "@mui/icons-material": "^6.1.1",
     "@mui/material": "^6.1.1",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^2.5.2",
+    "latex.js": "^0.12.6",
     "markdown-latex": "^0.0.6",
     "mathpix-markdown-it": "^1.3.10",
     "next": "14.0.4",
     "react": "^18",
-    "react-dom": "^18"
+    "react-dom": "^18",
+    "svgdom": "^0.1.19"
   },
   "devDependencies": {
     "@types/node": "^20",

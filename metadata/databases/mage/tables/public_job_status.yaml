@@ -1,0 +1,7 @@
+table:
+  name: job_status
+  schema: public
+object_relationships:
+  - name: exam
+    using:
+      foreign_key_constraint_on: exam_id

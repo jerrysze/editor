@@ -1,0 +1,46 @@
+table:
+  name: courses
+  schema: public
+object_relationships:
+  - name: course_semester
+    using:
+      foreign_key_constraint_on: semester_id
+array_relationships:
+  - name: exams
+    using:
+      foreign_key_constraint_on:
+        columns:
+          - semester_id
+          - course_code
+        table:
+          name: exams
+          schema: public
+  - name: examsByCourseCodeSemesterId
+    using:
+      manual_configuration:
+        column_mapping:
+          course_code: course_code
+          semester_id: semester_id
+        insertion_order: null
+        remote_table:
+          name: exams
+          schema: public
+  - name: userCoursesByCourseCodeSemesterId
+    using:
+      manual_configuration:
+        column_mapping:
+          course_code: course_code
+          semester_id: semester_id
+        insertion_order: null
+        remote_table:
+          name: user_course
+          schema: public
+  - name: user_courses
+    using:
+      foreign_key_constraint_on:
+        columns:
+          - semester_id
+          - course_code
+        table:
+          name: user_course
+          schema: public

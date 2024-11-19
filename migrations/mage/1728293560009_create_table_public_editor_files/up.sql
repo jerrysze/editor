@@ -1,0 +1,1 @@
+CREATE TABLE "public"."editor_files" ("collection_id" integer NOT NULL, "file_id" integer NOT NULL, "content" text NOT NULL, PRIMARY KEY ("collection_id") , UNIQUE ("collection_id"), UNIQUE ("file_id"));

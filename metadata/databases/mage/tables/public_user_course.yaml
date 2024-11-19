@@ -1,0 +1,22 @@
+table:
+  name: user_course
+  schema: public
+object_relationships:
+  - name: course
+    using:
+      foreign_key_constraint_on:
+        - semester_id
+        - course_code
+  - name: courseBySemesterIdCourseCode
+    using:
+      manual_configuration:
+        column_mapping:
+          course_code: course_code
+          semester_id: semester_id
+        insertion_order: null
+        remote_table:
+          name: courses
+          schema: public
+  - name: user
+    using:
+      foreign_key_constraint_on: itsc

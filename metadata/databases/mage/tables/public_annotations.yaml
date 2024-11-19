@@ -1,0 +1,23 @@
+table:
+  name: annotations
+  schema: public
+object_relationships:
+  - name: questionSubmissionByQuestionInformationIdFileIdOffsetEndOffsetStart
+    using:
+      manual_configuration:
+        column_mapping:
+          file_id: file_id
+          offset_end: offset_end
+          offset_start: offset_start
+          question_information_id: question_information_id
+        insertion_order: null
+        remote_table:
+          name: question_submissions
+          schema: public
+  - name: question_submission
+    using:
+      foreign_key_constraint_on:
+        - file_id
+        - question_information_id
+        - offset_end
+        - offset_start

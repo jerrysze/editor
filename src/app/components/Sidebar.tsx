@@ -1,25 +1,19 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Drawer, List, ListItem, Typography, IconButton, Menu, MenuItem, useTheme, Button } from '@mui/material';
+import React, { useState, useEffect, useRef, useContext } from 'react';
+import { Drawer, List, ListItem, Typography, IconButton, Menu, MenuItem, useTheme, Button, Box } from '@mui/material';
 import { ExpandMore, KeyboardArrowRight, FolderSpecial, PersonAdd } from '@mui/icons-material';
 import SearchBar from './SearchBar';
 import DeleteConfirmDialog from './DeleteConfirmDialog';
 import TemplatesList from './TemplatesList';
 import CollectionsList from './CollectionsList';
+import { ActiveFileContext } from '../contexts/ActiveFileContext';
+import { getCollectionStructure, saveCollectionStructure, deleteFile, deleteCollection, renameCollection } from '@/app/api';
+import { Collection, File } from '@/app/types';
+import MergeFilesButton from './MergeFilesButton';
+import ResizeHandle from './ResizeHandle';
 
-const drawerWidth = 240;
-
-export interface File {
-  id: string;
-  name: string;
-}
-
-export interface Collection {
-  id: string;
-  name: string;
-  files: File[];
-  collections: Collection[];
-  isOpen?: boolean;
-}
+const MIN_DRAWER_WIDTH = 200;
+const MAX_DRAWER_WIDTH = 600;
+const DEFAULT_DRAWER_WIDTH = 240;
 
 export interface Template {
   id: string;
@@ -47,6 +41,33 @@ const Sidebar = () => {
   const sidebarRef = useRef<HTMLUListElement>(null);
   const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
   const [templatesVisible, setTemplatesVisible] = useState(true);
+  const { setActiveFile } = useContext(ActiveFileContext);
+  const [drawerWidth, setDrawerWidth] = useState(DEFAULT_DRAWER_WIDTH);
+  const [highlightedCollection, setHighlightedCollection] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadCollectionStructure();
+  }, []);
+
+  const loadCollectionStructure = async () => {
+    try {
+      console.log("Loading collection structure...");
+      const structure = await getCollectionStructure();
+      console.log("Received structure:", structure);
+      if (structure && structure.length > 0) {
+        setCollections(structure);
+        setFilteredCollections(structure);
+      } else {
+        console.log("Received empty or invalid structure");
+        setCollections([]);
+        setFilteredCollections([]);
+      }
+    } catch (error) {
+      console.error("Error loading collection structure:", error);
+      setCollections([]);
+      setFilteredCollections([]);
+    }
+  };
 
   useEffect(() => {
     setFilteredCollections(searchTerm ? filterCollections(collections, searchTerm) : collections);
@@ -84,18 +105,33 @@ const Sidebar = () => {
     setSelectedItem(null);
   };
 
-  const addItem = (type: 'collection' | 'file', parentId: string | null) => {
+  const addItem = async (type: 'collection' | 'file', parentId: string | null) => {
     if (newItemName.trim()) {
       const newItem = { id: Date.now().toString(), name: newItemName };
+      let updatedCollections: Collection[];
       if (parentId === null) {
         if (type === 'collection') {
-          setCollections(prevCollections => [...prevCollections, { ...newItem, files: [], collections: [], isOpen: true }].sort((a, b) => a.name.localeCompare(b.name)));
+          updatedCollections = [...collections, { ...newItem, files: [], collections: [], isOpen: true }];
+        } else {
+          console.error("Cannot add a file without a parent collection");
+          return;
         }
       } else {
-        setCollections(prevCollections => updateCollections(prevCollections, parentId, type, newItem));
+        updatedCollections = updateCollections(collections, parentId, type, newItem);
       }
+      updatedCollections.sort((a, b) => a.name.localeCompare(b.name));
+      setCollections(updatedCollections);
       setNewItemName('');
       setAddingItem(null);
+
+      // Save the updated structure
+      try {
+        await saveCollectionStructure(updatedCollections);
+        console.log("Collection structure saved successfully");
+      } catch (error) {
+        console.error("Failed to save collection structure:", error);
+        // Optionally, you can add some user feedback here
+      }
     }
   };
 
@@ -149,19 +185,30 @@ const Sidebar = () => {
     return findItemName(collections);
   };
 
-  const renameItem = () => {
+  const renameItem = async () => {
     if (renamingItem && newItemName.trim()) {
-      if (renamingItem.type === 'template') {
-        setTemplates(prevTemplates =>
-          prevTemplates.map(template =>
-            template.id === renamingItem.id ? { ...template, name: newItemName } : template
-          ).sort((a, b) => a.name.localeCompare(b.name))
-        );
-      } else {
-        setCollections(renameItemInCollections(collections, renamingItem.id, renamingItem.type, newItemName));
+      try {
+        if (renamingItem.type === 'template') {
+          setTemplates(prevTemplates =>
+            prevTemplates.map(template =>
+              template.id === renamingItem.id ? { ...template, name: newItemName } : template
+            ).sort((a, b) => a.name.localeCompare(b.name))
+          );
+        } else if (renamingItem.type === 'collection') {
+          // Update the collection name in the database
+          await renameCollection(renamingItem.id, newItemName);
+          // Then update local state
+          setCollections(renameItemInCollections(collections, renamingItem.id, renamingItem.type, newItemName));
+        } else {
+          // Handle file renaming (if needed)
+          setCollections(renameItemInCollections(collections, renamingItem.id, renamingItem.type, newItemName));
+        }
+        setNewItemName('');
+        setRenamingItem(null);
+      } catch (error) {
+        console.error("Error renaming item:", error);
+        // Optionally show an error message to the user
       }
-      setNewItemName('');
-      setRenamingItem(null);
     }
   };
 
@@ -193,15 +240,68 @@ const Sidebar = () => {
     handleMenuClose();
   };
 
-  const handleDeleteConfirm = () => {
-    if (itemToDelete) {
-      if (itemToDelete.type === 'template') {
-        deleteTemplate(itemToDelete.id);
-      } else {
-        setCollections(deleteItemFromCollections(collections, itemToDelete.id, itemToDelete.type, itemToDelete.parentId));
+  const deleteAllFilesInCollection = async (collection: Collection) => {
+    // Delete files in current collection
+    for (const file of collection.files) {
+      try {
+        await deleteFile(file.id);
+      } catch (error) {
+        console.error(`Error deleting file ${file.name}:`, error);
+        throw error; // Propagate error up
       }
-      setDeleteConfirmOpen(false);
-      setItemToDelete(null);
+    }
+
+    // Recursively delete files in subcollections
+    for (const subCollection of collection.collections) {
+      await deleteAllFilesInCollection(subCollection);
+    }
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (itemToDelete) {
+      try {
+        if (itemToDelete.type === 'template') {
+          deleteTemplate(itemToDelete.id);
+        } else if (itemToDelete.type === 'file') {
+          // Delete single file
+          await deleteFile(itemToDelete.id);
+          setCollections(deleteItemFromCollections(collections, itemToDelete.id, itemToDelete.type, itemToDelete.parentId));
+        } else if (itemToDelete.type === 'collection') {
+          // Find the collection to delete
+          const collectionToDelete = findCollectionById(collections, itemToDelete.id);
+          if (collectionToDelete) {
+            try {
+              // First delete all files in the collection and its subcollections
+              await deleteAllFilesInCollection(collectionToDelete);
+              
+              // Then delete the collection itself
+              await deleteCollection(itemToDelete.id);
+              setCollections(deleteItemFromCollections(collections, itemToDelete.id, itemToDelete.type, itemToDelete.parentId));
+            } catch (error) {
+              console.error("Error during collection deletion:", error);
+              throw error;
+            }
+          }
+        }
+        
+        // Clear the active file if it was deleted or if its parent collection was deleted
+        if (itemToDelete.type === 'file' || itemToDelete.type === 'collection') {
+          setActiveFile({
+            collectionId: null,
+            fileId: null,
+            fileName: null,
+          });
+        }
+        
+        setDeleteConfirmOpen(false);
+        setItemToDelete(null);
+
+        // Refresh the collection structure
+        await loadCollectionStructure();
+      } catch (error) {
+        console.error("Error deleting item:", error);
+        // Optionally show an error message to the user
+      }
     }
   };
 
@@ -230,7 +330,37 @@ const Sidebar = () => {
 
   const handleItemClick = (id: string, type: 'collection' | 'file' | 'template') => {
     setActiveItem({ id, type });
-    console.log(`Clicked on ${type} with id: ${id}`);
+    if (type === 'file') {
+      const file = findFileById(id, collections);
+      if (file) {
+        setActiveFile({
+          collectionId: file.collectionId,
+          fileId: file.id,
+          fileName: file.name,
+        });
+      }
+    } else if (type === 'collection') {
+      setActiveFile({
+        collectionId: id,
+        fileId: null,
+        fileName: null,
+      });
+    }
+  };
+
+  // Helper function to find a file by its ID
+  const findFileById = (id: string, collections: Collection[]): { id: string, name: string, collectionId: string } | null => {
+    for (const collection of collections) {
+      const file = collection.files.find(f => f.id === id);
+      if (file) {
+        return { ...file, collectionId: collection.id };
+      }
+      const nestedResult = findFileById(id, collection.collections);
+      if (nestedResult) {
+        return nestedResult;
+      }
+    }
+    return null;
   };
 
   const toggleCollection = (id: string) => {
@@ -272,6 +402,31 @@ const Sidebar = () => {
     };
   }, []);
 
+  const handleResize = (newWidth: number) => {
+    setDrawerWidth(Math.min(Math.max(newWidth, MIN_DRAWER_WIDTH), MAX_DRAWER_WIDTH));
+  };
+
+  const handleNewCollection = (collectionId: string) => {
+    setHighlightedCollection(collectionId);
+    setTimeout(() => {
+      setHighlightedCollection(null);
+    }, 4000); // Remove highlight after 4 seconds
+  };
+
+  // Helper function to find a collection by ID
+  const findCollectionById = (collections: Collection[], id: string): Collection | null => {
+    for (const collection of collections) {
+      if (collection.id === id) {
+        return collection;
+      }
+      const found = findCollectionById(collection.collections, id);
+      if (found) {
+        return found;
+      }
+    }
+    return null;
+  };
+
   return (
     <>
       <Drawer
@@ -279,6 +434,7 @@ const Sidebar = () => {
         sx={{
           width: drawerWidth,
           flexShrink: 0,
+          position: 'relative',
           '& .MuiDrawer-paper': {
             width: drawerWidth,
             boxSizing: 'border-box',
@@ -287,6 +443,7 @@ const Sidebar = () => {
             backgroundColor: theme.palette.background.sidebar,
             display: 'flex',
             flexDirection: 'column',
+            transition: 'none', // Remove transition for smooth resizing
           },
         }}
       >
@@ -303,22 +460,31 @@ const Sidebar = () => {
             <Typography variant="subtitle2" sx={{ flexGrow: 1 }}>COLLECTIONS</Typography>
           </ListItem>
           {collectionsVisible && (
-            <CollectionsList
-              collections={collections}
-              filteredCollections={filteredCollections}
-              searchTerm={searchTerm}
-              activeItem={activeItem}
-              addingItem={addingItem}
-              renamingItem={renamingItem}
-              newItemName={newItemName}
-              handleItemClick={handleItemClick}
-              handleMenuOpen={handleMenuOpen}
-              toggleCollection={toggleCollection}
-              setAddingItem={setAddingItem}
-              setNewItemName={setNewItemName}
-              addItem={addItem}
-              renameItem={renameItem}
-            />
+            <>
+              {collections.length > 0 ? (
+                <CollectionsList
+                  collections={collections}
+                  filteredCollections={filteredCollections}
+                  searchTerm={searchTerm}
+                  activeItem={activeItem}
+                  addingItem={addingItem}
+                  renamingItem={renamingItem}
+                  newItemName={newItemName}
+                  handleItemClick={handleItemClick}
+                  handleMenuOpen={handleMenuOpen}
+                  toggleCollection={toggleCollection}
+                  setAddingItem={setAddingItem}
+                  setNewItemName={setNewItemName}
+                  addItem={addItem}
+                  renameItem={renameItem}
+                  highlightedCollection={highlightedCollection}
+                />
+              ) : (
+                <ListItem>
+                  <Typography variant="body2">No collections found</Typography>
+                </ListItem>
+              )}
+            </>
           )}
           <TemplatesList
             templates={templates}
@@ -329,17 +495,32 @@ const Sidebar = () => {
             setTemplatesVisible={setTemplatesVisible}
           />
         </List>
-        <ListItem sx={{ justifyContent: 'center', borderTop: 1, borderColor: 'divider' }}>
+        <Box sx={{ 
+          borderTop: 1, 
+          borderColor: 'divider',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          p: 1,
+          gap: 1,
+          width: '100%'
+        }}>
+          <Box sx={{ width: '100%' }}>
+            <MergeFilesButton 
+              onRefresh={loadCollectionStructure} 
+              onNewCollection={handleNewCollection}
+            />
+          </Box>
           <Button
             startIcon={<PersonAdd />}
             onClick={handleInvitePeople}
             fullWidth
             variant="outlined"
-            sx={{ mt: 1, mb: 1 }}
           >
             Invite People
           </Button>
-        </ListItem>
+        </Box>
+        <ResizeHandle onResize={handleResize} initialWidth={drawerWidth} />
       </Drawer>
       <Menu
         anchorReference="anchorPosition"
