@@ -2,7 +2,7 @@ table:
   name: annotations
   schema: public
 object_relationships:
-  - name: questionSubmissionByQuestionInformationIdFileIdOffsetEndOffsetStart
+  - name: questionSubmissionByOffsetStartQuestionInformationIdFileIdOffsetEnd
     using:
       manual_configuration:
         column_mapping:

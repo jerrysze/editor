@@ -11,7 +11,7 @@ object_relationships:
         - file_id
         - offset_end
         - offset_start
-  - name: submissionByFileIdOffsetStartOffsetEnd
+  - name: submissionByFileIdOffsetEndOffsetStart
     using:
       manual_configuration:
         column_mapping:
