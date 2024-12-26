@@ -1,15 +1,20 @@
 import React, { useState, useEffect, useRef, useContext } from 'react';
-import { Drawer, List, ListItem, Typography, IconButton, Menu, MenuItem, useTheme, Button, Box } from '@mui/material';
-import { ExpandMore, KeyboardArrowRight, FolderSpecial, PersonAdd } from '@mui/icons-material';
+import { Drawer, List, ListItem, Typography, IconButton, Menu, MenuItem, useTheme, Button, Box, FormControl, Select, InputLabel } from '@mui/material';
+import { ExpandMore, KeyboardArrowRight, FolderSpecial, PersonAdd, Add, MoreVert, InsertDriveFile } from '@mui/icons-material';
 import SearchBar from './SearchBar';
 import DeleteConfirmDialog from './DeleteConfirmDialog';
-import TemplatesList from './TemplatesList';
-import CollectionsList from './CollectionsList';
 import { ActiveFileContext } from '../contexts/ActiveFileContext';
 import { getCollectionStructure, saveCollectionStructure, deleteFile, deleteCollection, renameCollection } from '@/app/api';
 import { Collection, File } from '@/app/types';
 import MergeFilesButton from './MergeFilesButton';
 import ResizeHandle from './ResizeHandle';
+import { 
+  TextField,
+  Checkbox,
+  ListItemIcon,
+  ListItemText,
+  ListItemButton 
+} from '@mui/material';
 
 const MIN_DRAWER_WIDTH = 200;
 const MAX_DRAWER_WIDTH = 600;
@@ -41,9 +46,18 @@ const Sidebar = () => {
   const sidebarRef = useRef<HTMLUListElement>(null);
   const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
   const [templatesVisible, setTemplatesVisible] = useState(true);
-  const { setActiveFile } = useContext(ActiveFileContext);
+  const { 
+    setActiveFile,
+    isSelectionMode,
+    setSelectionMode,
+    selectedFiles,
+    setSelectedFiles,
+    selectionType,
+    setSelectionType
+  } = useContext(ActiveFileContext);
   const [drawerWidth, setDrawerWidth] = useState(DEFAULT_DRAWER_WIDTH);
   const [highlightedCollection, setHighlightedCollection] = useState<string | null>(null);
+  const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
 
   useEffect(() => {
     loadCollectionStructure();
@@ -263,19 +277,26 @@ const Sidebar = () => {
         if (itemToDelete.type === 'template') {
           deleteTemplate(itemToDelete.id);
         } else if (itemToDelete.type === 'file') {
-          // Delete single file
           await deleteFile(itemToDelete.id);
           setCollections(deleteItemFromCollections(collections, itemToDelete.id, itemToDelete.type, itemToDelete.parentId));
         } else if (itemToDelete.type === 'collection') {
-          // Find the collection to delete
           const collectionToDelete = findCollectionById(collections, itemToDelete.id);
           if (collectionToDelete) {
             try {
-              // First delete all files in the collection and its subcollections
               await deleteAllFilesInCollection(collectionToDelete);
-              
-              // Then delete the collection itself
               await deleteCollection(itemToDelete.id);
+              
+              // If we're deleting the currently selected collection
+              if (selectedCollectionId === itemToDelete.id) {
+                // Find another collection to select
+                const remainingCollections = collections.filter(c => c.id !== itemToDelete.id);
+                if (remainingCollections.length > 0) {
+                  setSelectedCollectionId(remainingCollections[0].id);
+                } else {
+                  setSelectedCollectionId(null);
+                }
+              }
+              
               setCollections(deleteItemFromCollections(collections, itemToDelete.id, itemToDelete.type, itemToDelete.parentId));
             } catch (error) {
               console.error("Error during collection deletion:", error);
@@ -300,7 +321,6 @@ const Sidebar = () => {
         await loadCollectionStructure();
       } catch (error) {
         console.error("Error deleting item:", error);
-        // Optionally show an error message to the user
       }
     }
   };
@@ -427,6 +447,72 @@ const Sidebar = () => {
     return null;
   };
 
+  useEffect(() => {
+    if (collections.length > 0 && !selectedCollectionId) {
+      setSelectedCollectionId(collections[0].id);
+    }
+  }, [collections]);
+
+  const handleFileSelection = (
+    file: { id: string; name: string },
+    collectionId: string,
+    event?: React.MouseEvent | React.ChangeEvent<HTMLInputElement>
+  ) => {
+    if (event) {
+      event.stopPropagation();
+    }
+    
+    setSelectedFiles(prev => {
+      const isAlreadySelected = prev.some(f => f.fileId === file.id);
+      
+      if (isAlreadySelected) {
+        // Remove file from selection and reorder remaining files
+        const newSelection = prev
+          .filter(f => f.fileId !== file.id)
+          .map((f, index) => ({
+            ...f,
+            selectionOrder: index + 1
+          }));
+        return newSelection;
+      } else {
+        // Add new file to selection
+        const newFile = {
+          collectionId,
+          fileId: file.id,
+          fileName: file.name,
+          selectionOrder: prev.length + 1
+        };
+
+        if (selectionType === 'insert') {
+          // In insert mode, select only one file
+          return [newFile];
+        } else if (selectionType === 'merge') {
+          // In merge mode, allow multiple selections
+          return [...prev, newFile];
+        } else {
+          return prev; // No changes in other modes
+        }
+      }
+    });
+
+    // Only exit selection mode automatically in insert mode
+    if (selectionType === 'insert') {
+      setSelectionMode(false);
+    }
+  };
+
+  // Add this effect to handle collection deletion
+  useEffect(() => {
+    // If the selected collection no longer exists, select another one
+    if (selectedCollectionId && !collections.find(c => c.id === selectedCollectionId)) {
+      if (collections.length > 0) {
+        setSelectedCollectionId(collections[0].id);
+      } else {
+        setSelectedCollectionId(null);
+      }
+    }
+  }, [collections, selectedCollectionId]);
+
   return (
     <>
       <Drawer
@@ -443,7 +529,7 @@ const Sidebar = () => {
             backgroundColor: theme.palette.background.sidebar,
             display: 'flex',
             flexDirection: 'column',
-            transition: 'none', // Remove transition for smooth resizing
+            transition: 'none',
           },
         }}
       >
@@ -452,76 +538,169 @@ const Sidebar = () => {
             searchTerm={searchTerm}
             setSearchTerm={setSearchTerm}
           />
-          <ListItem>
-            <IconButton onClick={() => setCollectionsVisible(!collectionsVisible)} size="small">
-              {collectionsVisible ? <ExpandMore fontSize="small" /> : <KeyboardArrowRight fontSize="small" />}
+          <Box sx={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: 1,
+            p: 1.5,
+          }}>
+            <FormControl fullWidth size="small">
+              <InputLabel>Collection</InputLabel>
+              <Select
+                value={selectedCollectionId || ''}
+                onChange={(e) => setSelectedCollectionId(e.target.value)}
+                label="Collection"
+              >
+                {collections.map((collection) => (
+                  <MenuItem key={collection.id} value={collection.id}>
+                    {collection.name}
+                  </MenuItem>
+                ))}
+                <MenuItem 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setAddingItem({ type: 'collection', parentId: null });
+                  }}
+                  sx={{ 
+                    color: 'primary.main',
+                    borderTop: 1,
+                    borderColor: 'divider'
+                  }}
+                >
+                  <Add fontSize="small" sx={{ mr: 1 }} />
+                  New Collection
+                </MenuItem>
+              </Select>
+            </FormControl>
+            {selectedCollectionId && (
+              <IconButton
+                size="small"
+                onClick={(e) => handleMenuOpen(e, selectedCollectionId, 'collection', null)}
+              >
+                <MoreVert fontSize="small" />
             </IconButton>
-            <FolderSpecial fontSize="small" sx={{ mr: 1, color: theme.palette.primary.main }} />
-            <Typography variant="subtitle2" sx={{ flexGrow: 1 }}>COLLECTIONS</Typography>
-          </ListItem>
-          {collectionsVisible && (
+            )}
+          </Box>
+          
+          {selectedCollectionId && (
             <>
-              {collections.length > 0 ? (
-                <CollectionsList
-                  collections={collections}
-                  filteredCollections={filteredCollections}
-                  searchTerm={searchTerm}
-                  activeItem={activeItem}
-                  addingItem={addingItem}
-                  renamingItem={renamingItem}
-                  newItemName={newItemName}
-                  handleItemClick={handleItemClick}
-                  handleMenuOpen={handleMenuOpen}
-                  toggleCollection={toggleCollection}
-                  setAddingItem={setAddingItem}
-                  setNewItemName={setNewItemName}
-                  addItem={addItem}
-                  renameItem={renameItem}
-                  highlightedCollection={highlightedCollection}
-                />
-              ) : (
-                <ListItem>
-                  <Typography variant="body2">No collections found</Typography>
-                </ListItem>
-              )}
+              {/* Show files directly without collection header */}
+              {collections.find(c => c.id === selectedCollectionId)?.files.map((file) => (
+                <ListItemButton
+                  key={file.id}
+                  onClick={() => isSelectionMode 
+                    ? handleFileSelection(file, selectedCollectionId)
+                    : handleItemClick(file.id, 'file')
+                  }
+                  selected={activeItem?.id === file.id && activeItem?.type === 'file'}
+                  sx={{ pl: 3 }}
+                >
+                  {isSelectionMode && (
+                    <ListItemIcon>
+                      <Checkbox
+                        checked={selectedFiles.some(f => f.fileId === file.id)}
+                        onChange={(e) => handleFileSelection(file, selectedCollectionId, e)}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </ListItemIcon>
+                  )}
+                  <ListItemIcon>
+                    <InsertDriveFile fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText 
+                    primary={
+                      <Box component="span" sx={{ display: 'flex', alignItems: 'center' }}>
+                        {file.name}
+                        {selectedFiles.some(f => f.fileId === file.id) && (
+                          <Box
+                            component="span"
+                            sx={{
+                              marginLeft: 1,
+                              color: 'primary.main',
+                              fontWeight: 'bold',
+                              fontSize: '0.8rem'
+                            }}
+                          >
+                            ({selectedFiles.find(f => f.fileId === file.id)?.selectionOrder})
+                          </Box>
+                        )}
+                      </Box>
+                    }
+                    primaryTypographyProps={{ variant: 'body2' }} 
+                  />
+                  <IconButton
+                    edge="end"
+                    size="small"
+                    onClick={(e) => handleMenuOpen(e, file.id, 'file', selectedCollectionId)}
+                  >
+                    <MoreVert fontSize="small" />
+                  </IconButton>
+                </ListItemButton>
+              ))}
+
+              {/* Add new file button */}
+              <ListItemButton 
+                onClick={() => setAddingItem({ type: 'file', parentId: selectedCollectionId })}
+                sx={{ pl: 3 }}
+              >
+                <ListItemIcon>
+                  <Add fontSize="small" />
+                </ListItemIcon>
+                <ListItemText primary="New File" primaryTypographyProps={{ variant: 'body2' }} />
+              </ListItemButton>
             </>
           )}
-          <TemplatesList
-            templates={templates}
-            setTemplates={setTemplates}
-            activeItem={activeItem}
-            setActiveItem={setActiveItem}
-            templatesVisible={templatesVisible}
-            setTemplatesVisible={setTemplatesVisible}
-          />
+
+          {/* Add new item dialog */}
+          {addingItem && (
+            <ListItem sx={{ pl: 3 }}>
+              <TextField
+                size="small"
+                value={newItemName}
+                onChange={(e) => setNewItemName(e.target.value)}
+                onKeyPress={(e) => {
+                  if (e.key === 'Enter') {
+                    if (addingItem.type === 'collection') {
+                      addItem('collection', null);
+                    } else {
+                      addItem('file', selectedCollectionId);
+                    }
+                  }
+                }}
+                placeholder={`New ${addingItem.type} name`}
+                autoFocus
+              />
+              <Button 
+                size="small" 
+                onClick={() => addItem(
+                  addingItem.type as 'collection' | 'file',
+                  addingItem.type === 'collection' ? null : selectedCollectionId
+                )}
+              >
+                Add
+              </Button>
+            </ListItem>
+          )}
         </List>
+
+        {/* Bottom buttons */}
         <Box sx={{ 
           borderTop: 1, 
           borderColor: 'divider',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
           p: 1,
           gap: 1,
           width: '100%'
         }}>
-          <Box sx={{ width: '100%' }}>
             <MergeFilesButton 
               onRefresh={loadCollectionStructure} 
               onNewCollection={handleNewCollection}
-            />
-          </Box>
-          <Button
-            startIcon={<PersonAdd />}
-            onClick={handleInvitePeople}
-            fullWidth
-            variant="outlined"
-          >
-            Invite People
-          </Button>
+            selectedCollectionId={selectedCollectionId}
+          />
         </Box>
         <ResizeHandle onResize={handleResize} initialWidth={drawerWidth} />
       </Drawer>
+
+      {/* Menus and dialogs remain the same */}
       <Menu
         anchorReference="anchorPosition"
         anchorPosition={menuPosition ?? undefined}
@@ -529,22 +708,11 @@ const Sidebar = () => {
         onClose={handleMenuClose}
       >
         {selectedItem?.type === 'collection' && (
-          <>
-            <MenuItem onClick={() => {
-              setAddingItem({ type: 'file', parentId: selectedItem?.id ?? null });
-              handleMenuClose();
-            }}>
-              Add File
-            </MenuItem>
-            <MenuItem onClick={() => {
-              setAddingItem({ type: 'collection', parentId: selectedItem?.id ?? null });
-              handleMenuClose();
-            }}>
-              Add Subcollection
-            </MenuItem>
-          </>
+          <MenuItem onClick={startRenaming}>Rename Collection</MenuItem>
         )}
-        <MenuItem onClick={startRenaming}>Rename</MenuItem>
+        {selectedItem?.type === 'file' && (
+          <MenuItem onClick={startRenaming}>Rename File</MenuItem>
+        )}
         <MenuItem onClick={handleDeleteClick}>Delete</MenuItem>
       </Menu>
       <DeleteConfirmDialog

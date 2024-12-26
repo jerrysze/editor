@@ -7,9 +7,14 @@ import { serverPostResource, getFile } from '../api';
 interface MergeFilesButtonProps {
   onRefresh: () => Promise<void>;
   onNewCollection: (collectionId: string) => void;
+  selectedCollectionId: string | null;
 }
 
-const MergeFilesButton: React.FC<MergeFilesButtonProps> = ({ onRefresh, onNewCollection }) => {
+const MergeFilesButton: React.FC<MergeFilesButtonProps> = ({ 
+  onRefresh, 
+  onNewCollection,
+  selectedCollectionId 
+}) => {
   const { 
     isSelectionMode, 
     setSelectionMode, 
@@ -55,47 +60,31 @@ const MergeFilesButton: React.FC<MergeFilesButtonProps> = ({ onRefresh, onNewCol
 
   const handleMergeClick = async () => {
     if (!isSelectionMode) {
-      // Enter merge selection mode
       setSelectionMode(true);
       setSelectionType('merge');
-      setSelectedFiles([]); // Clear any previous selections
+      setSelectedFiles([]);
     } else if (selectionType === 'merge') {
-      if (selectedFiles.length >= 2) {
+      if (selectedFiles.length >= 2 && selectedCollectionId) {
         try {
           const mergedContent = await getMergedContent();
-
-          // Generate a unique ID for the new collection
-          const newCollectionId = crypto.randomUUID();
           
-          // Create a new collection
-          const collectionResponse = await serverPostResource('create_collection', JSON.stringify({
-            collection_id: newCollectionId,
-            collection_name: 'Merged Files',
-            parent_id: null
+          // Create new file in the current collection
+          const newFileId = crypto.randomUUID();
+          const fileResponse = await serverPostResource('create_file', JSON.stringify({
+            collection_id: selectedCollectionId,
+            file_id: newFileId,
+            file_name: 'Merged File',
+            content: mergedContent,
           }));
 
-          if (collectionResponse.data) {
-            // Generate a unique ID for the new file
-            const newFileId = crypto.randomUUID();
-            
-            // Create a new merged file in the new collection
-            const fileResponse = await serverPostResource('create_file', JSON.stringify({
-              collection_id: newCollectionId,
-              file_id: newFileId,
-              file_name: 'untitled',
-              content: mergedContent,
-            }));
-
-            // Refresh and notify
-            await onRefresh();
-            onNewCollection(newCollectionId);
-          }
+          // Refresh the view
+          await onRefresh();
+          onNewCollection(selectedCollectionId);
         } catch (error) {
           console.error('Error during merge process:', error);
         }
       }
 
-      // Reset selection mode and clear selections
       setSelectionMode(false);
       setSelectionType('none');
       setSelectedFiles([]);
