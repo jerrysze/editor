@@ -10,6 +10,7 @@ import ShareIcon from '@mui/icons-material/Share';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
+import MarkdownEditor from './MarkdownEditor';
 
 interface AppState {
   markdownValue: string;
@@ -142,75 +143,68 @@ export default class Editor extends Component<EditorProps, AppState> {
   };
 
   handleShare = async () => {
-    if (this.state.activeTab === 0) {  // LaTeX mode
-      try {
-        // First ensure preview is visible
-        if (!this.state.showPreview) {
-          await new Promise<void>(resolve => {
-            this.setState({ showPreview: true }, () => {
-              setTimeout(resolve, 500);
-            });
+    try {
+      // First ensure preview is visible
+      if (!this.state.showPreview) {
+        await new Promise<void>(resolve => {
+          this.setState({ showPreview: true }, () => {
+            setTimeout(resolve, 500);
           });
-        }
-        
-        const previewElement = document.querySelector('.latex-preview');
-        if (!previewElement) {
-          console.error('No preview element found');
-          return;
+        });
+      }
+      
+      const previewElement = document.querySelector(
+        this.state.activeTab === 0 ? '.latex-preview' : '.markdown-preview'
+      );
+      
+      if (!previewElement) {
+        console.error('No preview element found');
+        return;
+      }
+
+      const htmlElement = previewElement as HTMLElement;
+      
+      // Create PDF with A4 dimensions
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'pt',
+        format: 'a4'
+      });
+
+      // Get the total height of the content
+      const contentHeight = htmlElement.offsetHeight;
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      
+      // Calculate number of pages needed
+      const totalPages = Math.ceil(contentHeight / pageHeight);
+      
+      // Create canvas for each page
+      for (let page = 0; page < totalPages; page++) {
+        if (page > 0) {
+          pdf.addPage();
         }
 
-        const htmlElement = previewElement as HTMLElement;
-        const contentDiv = htmlElement.querySelector('div') as HTMLElement;
-        
-        if (!contentDiv) {
-          console.error('No content element found');
-          return;
-        }
-
-        // Create PDF with A4 dimensions
-        const pdf = new jsPDF({
-          orientation: 'portrait',
-          unit: 'pt',
-          format: 'a4'
+        const canvas = await html2canvas(htmlElement, {
+          y: page * pageHeight,
+          height: pageHeight,
+          windowHeight: contentHeight
         });
 
-        // Get the total height of the content
-        const contentHeight = contentDiv.offsetHeight;
-        const pageHeight = pdf.internal.pageSize.getHeight();
-        const pageWidth = pdf.internal.pageSize.getWidth();
-        
-        // Calculate number of pages needed
-        const totalPages = Math.ceil(contentHeight / pageHeight);
-        
-        // Create canvas for each page
-        for (let page = 0; page < totalPages; page++) {
-          if (page > 0) {
-            pdf.addPage();
-          }
-
-          const canvas = await html2canvas(contentDiv, {
-            y: page * pageHeight,
-            height: pageHeight,
-            windowHeight: contentHeight
-          });
-
-          const imgData = canvas.toDataURL('image/png');
-          pdf.addImage(imgData, 'PNG', 0, 0, pageWidth, pageHeight);
-        }
-        
-        // Save the PDF
-        const fileName = this.props.fileName?.replace(/\.[^/.]+$/, "") || 'document';
-        pdf.save(`${fileName}.pdf`);
-
-        // Restore preview state if needed
-        if (!this.state.showPreview) {
-          this.setState({ showPreview: false });
-        }
-      } catch (error) {
-        console.error('Error generating PDF:', error);
+        const imgData = canvas.toDataURL('image/png');
+        pdf.addImage(imgData, 'PNG', 0, 0, pageWidth, pageHeight);
       }
-    } else {
-      console.log('PDF export not implemented for Markdown mode');
+      
+      // Save the PDF
+      const fileName = this.props.fileName?.replace(/\.[^/.]+$/, "") || 'document';
+      pdf.save(`${fileName}.pdf`);
+
+      // Restore preview state if needed
+      if (!this.state.showPreview) {
+        this.setState({ showPreview: false });
+      }
+    } catch (error) {
+      console.error('Error generating PDF:', error);
     }
   };
 
@@ -311,26 +305,13 @@ export default class Editor extends Component<EditorProps, AppState> {
                 />
               )}
               {activeTab === 1 && (
-                <MarkdownLatexEditor 
-                  value={markdownValue} 
-                  onChange={this.handleMarkdownChange} 
-                  language='en'
-                  style={{ height: '100%' }}
-                  toolbar={{
-                    h1: true, 
-                    h2: true, 
-                    h3: true, 
-                    h4: true, 
-                    img: true, 
-                    link: true, 
-                    code: true, 
-                    preview: true, 
-                    expand: true, 
-                    undo: true, 
-                    redo: true, 
-                    save: false,
-                    subfield: true, 
-                  }}
+                <MarkdownEditor
+                  collectionId={collectionId}
+                  fileId={fileId}
+                  fileName={fileName}
+                  value={markdownValue}
+                  onContentChange={this.handleMarkdownChange}
+                  showPreview={showPreview}
                 />
               )}
             </>
