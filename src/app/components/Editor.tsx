@@ -27,6 +27,12 @@ interface EditorProps {
   fileName: string | null;
 }
 
+const getEditorTypeFromFileName = (fileName: string | null): number => {
+  if (!fileName) return 0; // Default to LaTeX
+  const extension = fileName.split('.').pop()?.toLowerCase();
+  return extension === 'md' ? 1 : 0; // 1 for Markdown, 0 for LaTeX
+};
+
 export default class Editor extends Component<EditorProps, AppState> {
   static contextType = ActiveFileContext;
   context!: React.ContextType<typeof ActiveFileContext>;
@@ -50,7 +56,7 @@ export default class Editor extends Component<EditorProps, AppState> {
   }
 
   componentDidUpdate(prevProps: EditorProps, prevState: AppState) {
-    if (prevProps.fileId !== this.props.fileId) {
+    if (prevProps.fileId !== this.props.fileId || prevProps.fileName !== this.props.fileName) {
       this.loadFileContent();
     }
 
@@ -65,28 +71,33 @@ export default class Editor extends Component<EditorProps, AppState> {
   }
 
   loadFileContent = async () => {
-    const { fileId } = this.props;
+    const { fileId, fileName } = this.props;
     if (fileId) {
       this.setState({ isLoading: true });
       try {
         const fileData = await getFile(fileId);
         if (fileData && fileData.data && fileData.data.editor_files && fileData.data.editor_files[0]) {
           const content = fileData.data.editor_files[0].content;
+          // Set the active tab based on file extension
+          const newActiveTab = getEditorTypeFromFileName(fileName);
           this.setState({ 
             markdownValue: content,
-            latexValue: content
+            latexValue: content,
+            activeTab: newActiveTab // Set the correct editor type
           });
         } else {
           this.setState({ 
             markdownValue: '',
-            latexValue: ''
+            latexValue: '',
+            activeTab: getEditorTypeFromFileName(fileName) // Set even if no content
           });
         }
       } catch (error) {
         console.error("Error loading file content:", error);
         this.setState({ 
           markdownValue: '',
-          latexValue: ''
+          latexValue: '',
+          activeTab: getEditorTypeFromFileName(fileName) // Set even on error
         });
       } finally {
         this.setState({ isLoading: false });
@@ -94,7 +105,8 @@ export default class Editor extends Component<EditorProps, AppState> {
     } else {
       this.setState({ 
         markdownValue: '',
-        latexValue: ''
+        latexValue: '',
+        activeTab: getEditorTypeFromFileName(fileName) // Set even when no fileId
       });
     }
   }
@@ -254,13 +266,27 @@ export default class Editor extends Component<EditorProps, AppState> {
     const { isSelectionMode } = this.context;
 
     return(
-      <Box sx={{ flexGrow: 1, height: '100%', display: 'flex', flexDirection: 'column' }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', p: 1 }}>
+      <Box sx={{ 
+        flexGrow: 1, 
+        height: '100%', 
+        display: 'flex', 
+        flexDirection: 'column',
+        position: 'relative' // Ensure proper stacking context
+      }}>
+        <Box sx={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          p: 1,
+          backgroundColor: 'background.paper', // Ensure buttons are visible
+          zIndex: 1, // Keep toolbar above editors
+          borderBottom: 1,
+          borderColor: 'divider'
+        }}>
           <Tabs value={activeTab} onChange={this.handleTabChange}>
             <Tab label="LaTeX" />
             <Tab label="Markdown" />
           </Tabs>
-          <Box>
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
             <Tooltip title="Share as PDF">
               <IconButton onClick={this.handleShare} sx={{ mr: 1 }}>
                 <ShareIcon />
@@ -289,12 +315,23 @@ export default class Editor extends Component<EditorProps, AppState> {
             </Tooltip>
           </Box>
         </Box>
-        <Box sx={{ flexGrow: 1 }}>
+        <Box sx={{ 
+          flexGrow: 1, 
+          position: 'relative',
+          overflow: 'hidden' // Prevent content overflow
+        }}>
           {isLoading ? (
             <div>Loading...</div>
           ) : (
             <>
-              {activeTab === 0 && (
+              <Box sx={{ 
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                display: activeTab === 0 ? 'block' : 'none'
+              }}>
                 <LaTeXEditor
                   collectionId={collectionId}
                   fileId={fileId}
@@ -303,8 +340,15 @@ export default class Editor extends Component<EditorProps, AppState> {
                   onContentChange={this.handleLatexChange}
                   showPreview={showPreview}
                 />
-              )}
-              {activeTab === 1 && (
+              </Box>
+              <Box sx={{ 
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                display: activeTab === 1 ? 'block' : 'none'
+              }}>
                 <MarkdownEditor
                   collectionId={collectionId}
                   fileId={fileId}
@@ -313,7 +357,7 @@ export default class Editor extends Component<EditorProps, AppState> {
                   onContentChange={this.handleMarkdownChange}
                   showPreview={showPreview}
                 />
-              )}
+              </Box>
             </>
           )}
         </Box>
