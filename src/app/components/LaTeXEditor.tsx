@@ -1,9 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Typography, IconButton, ButtonGroup } from '@mui/material';
+import { Box, Typography, IconButton, ButtonGroup, CircularProgress } from '@mui/material';
 import { ZoomIn, ZoomOut } from '@mui/icons-material';
 import { getFile } from '@/app/api';
 import { parse, HtmlGenerator } from 'latex.js'
 import ResizeHandle from './ResizeHandle';
+import dynamic from 'next/dynamic';
+
+const PDFViewer = dynamic(() => import('./PDFViewer'), {
+  ssr: false,
+  loading: () => <div>Loading PDF viewer...</div>,
+});
 
 interface LaTeXEditorProps {
   collectionId: string | null;
@@ -30,8 +36,9 @@ const LaTeXEditor: React.FC<LaTeXEditorProps> = ({
   onContentChange,
   showPreview
 }) => {
-  const [compiledOutput, setCompiledOutput] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [compiling, setCompiling] = useState(false);
+  const [compilationError, setCompilationError] = useState<string | null>(null);
   const [editorWidth, setEditorWidth] = useState(DEFAULT_EDITOR_WIDTH);
   const [zoom, setZoom] = useState(100);
 
@@ -61,37 +68,35 @@ const LaTeXEditor: React.FC<LaTeXEditorProps> = ({
   };
 
   const compileLatex = async (latex: string) => {
-    setError(null);
     if (!latex.trim()) {
-      setCompiledOutput('');
+      setPdfUrl(null);
       return;
     }
+
     try {
-      const generator = new HtmlGenerator({ hyphenate: false });
-      const doc = parse(latex, { generator: generator });
-      if (doc && doc.domFragment) {
-        const fragment = doc.domFragment();
-        if (fragment instanceof DocumentFragment) {
-          const tempDiv = document.createElement('div');
-          tempDiv.appendChild(fragment.cloneNode(true));
-          
-          // Add styles from latex.js
-          const styles = doc.stylesAndScripts("https://cdn.jsdelivr.net/npm/latex.js@0.12.4/dist/");
-          tempDiv.insertBefore(styles, tempDiv.firstChild);
-          
-          const output = tempDiv.innerHTML;
-          console.log('Rendered LaTeX text:', tempDiv.textContent);
-          
-          setCompiledOutput(output || 'Error: Empty HTML output');
-        } else {
-          setError('Error: Invalid DOM fragment');
-        }
-      } else {
-        setError('Error: Unable to generate DOM fragment');
+      setCompiling(true);
+      setCompilationError(null);
+
+      const response = await fetch('/api/latex', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ latexText: latex }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Compilation failed');
       }
+
+      const pdfBlob = await response.blob();
+      const url = URL.createObjectURL(pdfBlob);
+      setPdfUrl(url);
     } catch (error) {
-      setError(`Error compiling LaTeX: ${error instanceof Error ? error.message : String(error)}`);
-      setCompiledOutput('');
+      setCompilationError(`Error compiling LaTeX: ${error instanceof Error ? error.message : String(error)}`);
+      setPdfUrl(null);
+    } finally {
+      setCompiling(false);
     }
   };
 
@@ -102,130 +107,146 @@ const LaTeXEditor: React.FC<LaTeXEditorProps> = ({
         flexGrow: 1, 
         height: '100%', 
         display: 'flex',
+        flexDirection: 'column',
         position: 'relative',
       }}
     >
       <Box
         sx={{
-          width: showPreview ? editorWidth : '100%',
-          height: '100%',
+          flexGrow: 1,
+          display: 'flex',
           position: 'relative',
-          transition: showPreview ? 'none' : 'width 0.3s ease-in-out'
+          overflow: 'hidden',
+          mt: '48px',
         }}
       >
-        <textarea
-          value={value}
-          onChange={handleChange}
-          style={{ 
-            width: '100%',
-            height: '100%',
-            resize: 'none',
-            padding: '10px',
-            lineHeight: '1.5',
-          }}
-          placeholder="Enter your LaTeX here..."
-        />
-        {showPreview && (
-          <ResizeHandle onResize={handleResize} initialWidth={editorWidth} />
-        )}
-      </Box>
-      {showPreview && (
         <Box
           sx={{
-            flexGrow: 1,
+            width: showPreview ? editorWidth : '100%',
             height: '100%',
-            display: 'flex',
-            flexDirection: 'column',
             position: 'relative',
+            transition: showPreview ? 'none' : 'width 0.3s ease-in-out'
           }}
         >
-          <Box
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '4px 8px',
-              borderBottom: '1px solid #e0e0e0',
-              backgroundColor: '#f5f5f5',
-              minHeight: '40px',
-              position: 'sticky',
-              top: 0,
-              zIndex: 1000,
+          <textarea
+            value={value}
+            onChange={handleChange}
+            style={{ 
               width: '100%',
+              height: '100%',
+              resize: 'none',
+              padding: '10px',
+              lineHeight: '1.5',
+              fontFamily: 'monospace',
+              fontSize: '14px',
+              border: '1px solid #e0e0e0',
+              borderRadius: '4px',
+              backgroundColor: '#ffffff',
             }}
-          >
-            <ButtonGroup 
-              size="small"
-              sx={{
-                boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-                backgroundColor: 'white',
-                borderRadius: '4px',
-              }}
-            >
-              <IconButton 
-                onClick={handleZoomOut}
-                disabled={zoom <= MIN_ZOOM}
-                size="small"
-              >
-                <ZoomOut fontSize="small" />
-              </IconButton>
-              <Box
-                sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  px: 2,
-                  borderLeft: '1px solid rgba(0, 0, 0, 0.12)',
-                  borderRight: '1px solid rgba(0, 0, 0, 0.12)',
-                  minWidth: '60px',
-                  justifyContent: 'center',
-                }}
-              >
-                <Typography variant="body2">{zoom}%</Typography>
-              </Box>
-              <IconButton 
-                onClick={handleZoomIn}
-                disabled={zoom >= MAX_ZOOM}
-                size="small"
-              >
-                <ZoomIn fontSize="small" />
-              </IconButton>
-            </ButtonGroup>
-          </Box>
+            placeholder="Enter your LaTeX here..."
+          />
+          {showPreview && (
+            <ResizeHandle onResize={handleResize} initialWidth={editorWidth} />
+          )}
+        </Box>
+        {showPreview && (
           <Box
             sx={{
               flexGrow: 1,
-              overflow: 'auto',
-              padding: '20px',
-              backgroundColor: '#f5f5f5',
+              height: '100%',
               display: 'flex',
               flexDirection: 'column',
-              alignItems: 'center',
-              gap: '20px'
+              position: 'relative',
+              overflow: 'hidden',
             }}
           >
             <Box
-              className="latex-preview"
               sx={{
-                width: A4_WIDTH_PX,
-                backgroundColor: 'white',
-                boxShadow: '0 0 10px rgba(0,0,0,0.1)',
                 display: 'flex',
-                flexDirection: 'column',
-                gap: '20px',
-                transform: `scale(${zoom / 100})`,
-                transformOrigin: 'top center',
-                marginBottom: `${zoom - 100}%`,
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '4px 8px',
+                borderBottom: '1px solid #e0e0e0',
+                backgroundColor: '#f5f5f5',
+                minHeight: '40px',
+                position: 'sticky',
+                top: 0,
+                zIndex: 1000,
+                width: '100%',
               }}
             >
-              {error ? (
-                <Typography color="error">{error}</Typography>
-              ) : compiledOutput ? (
-                <div 
-                  dangerouslySetInnerHTML={{ __html: compiledOutput }}
-                  style={{
-                    padding: '40px',
+              <ButtonGroup 
+                size="small"
+                sx={{
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+                  backgroundColor: 'white',
+                  borderRadius: '4px',
+                }}
+              >
+                <IconButton 
+                  onClick={handleZoomOut}
+                  disabled={zoom <= MIN_ZOOM}
+                  size="small"
+                >
+                  <ZoomOut fontSize="small" />
+                </IconButton>
+                <Box
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    px: 2,
+                    borderLeft: '1px solid rgba(0, 0, 0, 0.12)',
+                    borderRight: '1px solid rgba(0, 0, 0, 0.12)',
+                    minWidth: '60px',
+                    justifyContent: 'center',
                   }}
-                />
+                >
+                  <Typography variant="body2">{zoom}%</Typography>
+                </Box>
+                <IconButton 
+                  onClick={handleZoomIn}
+                  disabled={zoom >= MAX_ZOOM}
+                  size="small"
+                >
+                  <ZoomIn fontSize="small" />
+                </IconButton>
+              </ButtonGroup>
+            </Box>
+            <Box
+              sx={{
+                flexGrow: 1,
+                overflow: 'auto',
+                padding: '20px',
+                backgroundColor: '#f5f5f5',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '20px'
+              }}
+            >
+              {compiling ? (
+                <Box sx={{ p: 2, textAlign: 'center' }}>
+                  <CircularProgress size={24} />
+                  <Typography sx={{ mt: 1 }}>Compiling LaTeX...</Typography>
+                </Box>
+              ) : compilationError ? (
+                <Typography color="error" sx={{ p: 2 }}>{compilationError}</Typography>
+              ) : pdfUrl ? (
+                <Box
+                  className="latex-preview"
+                  sx={{
+                    width: A4_WIDTH_PX,
+                    minHeight: A4_HEIGHT_PX,
+                    backgroundColor: 'white',
+                    boxShadow: '0 0 10px rgba(0,0,0,0.1)',
+                    transform: `scale(${zoom / 100})`,
+                    transformOrigin: 'top center',
+                    marginBottom: `${zoom - 100}%`,
+                    overflow: 'hidden', // Prevent content overflow
+                  }}
+                >
+                  <PDFViewer pdfUrl={pdfUrl} />
+                </Box>
               ) : (
                 <Typography sx={{ p: 2 }}>
                   No output to display. Enter LaTeX in the editor.
@@ -233,8 +254,8 @@ const LaTeXEditor: React.FC<LaTeXEditorProps> = ({
               )}
             </Box>
           </Box>
-        </Box>
-      )}
+        )}
+      </Box>
     </Box>
   );
 };
