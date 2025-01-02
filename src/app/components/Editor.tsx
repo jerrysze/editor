@@ -157,46 +157,65 @@ export default class Editor extends Component<EditorProps, AppState> {
   };
 
   handleShare = async () => {
-    if (this.state.activeTab === 0) {  // LaTeX mode
-      try {
-        this.setState({ isPdfLoading: true });
-        
-        // First ensure preview is visible
-        if (!this.state.showPreview) {
-          await new Promise<void>(resolve => {
-            this.setState({ showPreview: true }, () => {
-              setTimeout(resolve, 500);
-            });
+    try {
+      this.setState({ isPdfLoading: true });
+      
+      // First ensure preview is visible
+      if (!this.state.showPreview) {
+        await new Promise<void>(resolve => {
+          this.setState({ showPreview: true }, () => {
+            setTimeout(resolve, 500);
           });
-        }
-      
-        const previewElement = document.querySelector(
-          this.state.activeTab === 0 ? '.latex-preview' : '.markdown-preview'
-        );
-      
-      if (!previewElement) {
-        console.error('No preview element found');
-        return;
+        });
       }
 
-        const htmlElement = previewElement as HTMLElement;
+      if (this.state.activeTab === 0) {  // LaTeX mode
+        // Use LaTeX compilation service
+        const response = await fetch('/api/latex', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ 
+            latexText: this.state.latexValue 
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to generate PDF');
+        }
+
+        // Get the PDF blob and trigger download
+        const pdfBlob = await response.blob();
+        const url = URL.createObjectURL(pdfBlob);
+        const link = document.createElement('a');
+        link.href = url;
+        const fileName = this.props.fileName?.replace(/\.[^/.]+$/, "") || 'document';
+        link.download = `${fileName}.pdf`;
         
-        // Create PDF with A4 dimensions
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+
+      } else {  // Markdown mode
+        const previewElement = document.querySelector('.markdown-preview');
+        if (!previewElement) {
+          throw new Error('No preview element found');
+        }
+
+        const htmlElement = previewElement as HTMLElement;
         const pdf = new jsPDF({
           orientation: 'portrait',
           unit: 'pt',
           format: 'a4'
         });
 
-        // Get the total height of the content
         const contentHeight = htmlElement.offsetHeight;
         const pageHeight = pdf.internal.pageSize.getHeight();
         const pageWidth = pdf.internal.pageSize.getWidth();
-        
-        // Calculate number of pages needed
         const totalPages = Math.ceil(contentHeight / pageHeight);
         
-        // Create canvas for each page
         for (let page = 0; page < totalPages; page++) {
           if (page > 0) {
             pdf.addPage();
@@ -212,19 +231,18 @@ export default class Editor extends Component<EditorProps, AppState> {
           pdf.addImage(imgData, 'PNG', 0, 0, pageWidth, pageHeight);
         }
         
-        // Save the PDF
         const fileName = this.props.fileName?.replace(/\.[^/.]+$/, "") || 'document';
         pdf.save(`${fileName}.pdf`);
-
-        // Restore preview state if needed
-        if (!this.state.showPreview) {
-          this.setState({ showPreview: false });
-        }
-      } catch (error) {
-        console.error('Error generating PDF:', error);
-      } finally {
-        this.setState({ isPdfLoading: false });
       }
+
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+    } finally {
+      // Restore preview state and loading state
+      if (!this.state.showPreview) {
+        this.setState({ showPreview: false });
+      }
+      this.setState({ isPdfLoading: false });
     }
   };
 

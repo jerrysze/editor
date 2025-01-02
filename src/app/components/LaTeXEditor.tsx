@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { Box, Typography, IconButton, ButtonGroup, CircularProgress } from '@mui/material';
 import { ZoomIn, ZoomOut } from '@mui/icons-material';
 import { getFile } from '@/app/api';
-import { parse, HtmlGenerator } from 'latex.js'
 import ResizeHandle from './ResizeHandle';
 import dynamic from 'next/dynamic';
 
