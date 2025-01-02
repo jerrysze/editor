@@ -7,7 +7,7 @@ object_relationships:
       foreign_key_constraint_on:
         - semester_id
         - course_code
-  - name: courseBySemesterIdCourseCode
+  - name: courseByCourseCodeSemesterId
     using:
       manual_configuration:
         column_mapping:
