@@ -168,54 +168,53 @@ export default class Editor extends Component<EditorProps, AppState> {
               setTimeout(resolve, 500);
             });
           });
-        });
-      }
-      
-      const previewElement = document.querySelector(
-        this.state.activeTab === 0 ? '.latex-preview' : '.markdown-preview'
-      );
-      
-      if (!previewElement) {
-        console.error('No preview element found');
-        return;
-      }
-
-      const htmlElement = previewElement as HTMLElement;
-      
-      // Create PDF with A4 dimensions
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'pt',
-        format: 'a4'
-      });
-
-      // Get the total height of the content
-      const contentHeight = htmlElement.offsetHeight;
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      
-      // Calculate number of pages needed
-      const totalPages = Math.ceil(contentHeight / pageHeight);
-      
-      // Create canvas for each page
-      for (let page = 0; page < totalPages; page++) {
-        if (page > 0) {
-          pdf.addPage();
+        }
+        
+        const previewElement = document.querySelector(
+          this.state.activeTab === 0 ? '.latex-preview' : '.markdown-preview'
+        );
+        
+        if (!previewElement) {
+          console.error('No preview element found');
+          return;
         }
 
-        const canvas = await html2canvas(htmlElement, {
-          y: page * pageHeight,
-          height: pageHeight,
-          windowHeight: contentHeight
+        const htmlElement = previewElement as HTMLElement;
+        
+        // Create PDF with A4 dimensions
+        const pdf = new jsPDF({
+          orientation: 'portrait',
+          unit: 'pt',
+          format: 'a4'
         });
 
-        const imgData = canvas.toDataURL('image/png');
-        pdf.addImage(imgData, 'PNG', 0, 0, pageWidth, pageHeight);
-      }
-      
-      // Save the PDF
-      const fileName = this.props.fileName?.replace(/\.[^/.]+$/, "") || 'document';
-      pdf.save(`${fileName}.pdf`);
+        // Get the total height of the content
+        const contentHeight = htmlElement.offsetHeight;
+        const pageHeight = pdf.internal.pageSize.getHeight();
+        const pageWidth = pdf.internal.pageSize.getWidth();
+        
+        // Calculate number of pages needed
+        const totalPages = Math.ceil(contentHeight / pageHeight);
+        
+        // Create canvas for each page
+        for (let page = 0; page < totalPages; page++) {
+          if (page > 0) {
+            pdf.addPage();
+          }
+
+          const canvas = await html2canvas(htmlElement, {
+            y: page * pageHeight,
+            height: pageHeight,
+            windowHeight: contentHeight
+          });
+
+          const imgData = canvas.toDataURL('image/png');
+          pdf.addImage(imgData, 'PNG', 0, 0, pageWidth, pageHeight);
+        }
+        
+        // Save the PDF
+        const fileName = this.props.fileName?.replace(/\.[^/.]+$/, "") || 'document';
+        pdf.save(`${fileName}.pdf`);
 
         // Restore preview state if needed
         if (!this.state.showPreview) {
@@ -226,10 +225,8 @@ export default class Editor extends Component<EditorProps, AppState> {
       } finally {
         this.setState({ isPdfLoading: false });
       }
-    } catch (error) {
-      console.error('Error generating PDF:', error);
     }
-  };
+  }
 
   handleInsertClick = () => {
     const { setSelectionMode, setSelectionType } = this.context;
