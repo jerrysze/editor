@@ -1,7 +1,7 @@
 import React, { Component } from 'react';
 import MarkdownLatexEditor from 'markdown-latex';
 import LaTeXEditor from './LaTeXEditor';
-import { Box, IconButton, Tabs, Tab, Tooltip } from '@mui/material';
+import { Box, IconButton, Tabs, Tab, Tooltip, CircularProgress } from '@mui/material';
 import SaveIcon from '@mui/icons-material/Save';
 import { saveFile, getFile } from '@/app/api';
 import { ActiveFileContext } from '../contexts/ActiveFileContext';
@@ -18,6 +18,7 @@ interface AppState {
   isLoading: boolean;
   activeTab: number;
   showPreview: boolean;
+  isPdfLoading: boolean;
 }
 
 interface EditorProps {
@@ -38,7 +39,8 @@ export default class Editor extends Component<EditorProps, AppState> {
       testResult: '',
       isLoading: false,
       activeTab: 0,
-      showPreview: false
+      showPreview: false,
+      isPdfLoading: false
     };
     this.handleMarkdownChange = this.handleMarkdownChange.bind(this);
     this.handleLatexChange = this.handleLatexChange.bind(this);
@@ -144,6 +146,8 @@ export default class Editor extends Component<EditorProps, AppState> {
   handleShare = async () => {
     if (this.state.activeTab === 0) {  // LaTeX mode
       try {
+        this.setState({ isPdfLoading: true });
+        
         // First ensure preview is visible
         if (!this.state.showPreview) {
           await new Promise<void>(resolve => {
@@ -208,6 +212,8 @@ export default class Editor extends Component<EditorProps, AppState> {
         }
       } catch (error) {
         console.error('Error generating PDF:', error);
+      } finally {
+        this.setState({ isPdfLoading: false });
       }
     } else {
       console.log('PDF export not implemented for Markdown mode');
@@ -255,49 +261,112 @@ export default class Editor extends Component<EditorProps, AppState> {
   };
 
   render() {
-    const { markdownValue, latexValue, isLoading, activeTab, showPreview } = this.state;
+    const { markdownValue, latexValue, isLoading, activeTab, showPreview, isPdfLoading } = this.state;
     const { collectionId, fileId, fileName } = this.props;
     const { isSelectionMode } = this.context;
 
     return(
-      <Box sx={{ flexGrow: 1, height: '100%', display: 'flex', flexDirection: 'column' }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', p: 1 }}>
-          <Tabs value={activeTab} onChange={this.handleTabChange}>
-            <Tab label="LaTeX" />
-            <Tab label="Markdown" />
-          </Tabs>
-          <Box>
-            <Tooltip title="Share as PDF">
-              <IconButton onClick={this.handleShare} sx={{ mr: 1 }}>
-                <ShareIcon />
+      <Box sx={{ 
+        flexGrow: 1, 
+        height: '100%', 
+        display: 'flex', 
+        flexDirection: 'column',
+        position: 'relative',
+        maxWidth: '100%',
+        overflow: 'hidden', // Prevent horizontal scrolling
+      }}>
+        <Box sx={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center',
+          p: 1,
+          borderBottom: '1px solid #e0e0e0',
+          backgroundColor: 'white',
+          position: 'sticky',
+          top: 0,
+          zIndex: 1100,
+          minHeight: '48px',
+          width: '100%',
+        }}>
+          <Box sx={{ 
+            minWidth: 0, // Allow tabs to shrink if needed
+            flex: '0 1 auto',
+          }}>
+            <Tabs 
+              value={activeTab} 
+              onChange={this.handleTabChange}
+              sx={{
+                minHeight: '36px',
+                '& .MuiTab-root': {
+                  minHeight: '36px',
+                  padding: '6px 12px',
+                }
+              }}
+            >
+              <Tab label="LaTeX" />
+              <Tab label="Markdown" />
+            </Tabs>
+          </Box>
+          <Box sx={{ 
+            display: 'flex',
+            alignItems: 'center',
+            ml: 1,
+            flexShrink: 0, // Prevent buttons from shrinking
+          }}>
+            <Tooltip title={isPdfLoading ? "Generating PDF..." : "Share as PDF"}>
+              <IconButton 
+                onClick={this.handleShare} 
+                size="small"
+                sx={{ ml: 0.5 }}
+                disabled={isPdfLoading}
+              >
+                {isPdfLoading ? (
+                  <CircularProgress size={20} />
+                ) : (
+                  <ShareIcon fontSize="small" />
+                )}
               </IconButton>
             </Tooltip>
             <Tooltip title={showPreview ? "Hide Preview" : "Show Preview"}>
-              <IconButton onClick={this.togglePreview} sx={{ mr: 1 }}>
-                {showPreview ? <VisibilityOff /> : <Visibility />}
+              <IconButton 
+                onClick={this.togglePreview} 
+                size="small"
+                sx={{ ml: 0.5 }}
+              >
+                {showPreview ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
               </IconButton>
             </Tooltip>
             <Tooltip title={isSelectionMode ? "Cancel Insert" : "Insert File Content"}>
               <IconButton 
                 onClick={this.handleInsertClick}
                 color={isSelectionMode ? "primary" : "default"}
-                sx={{ mr: 1 }}
+                size="small"
+                sx={{ ml: 0.5 }}
                 data-insert-mode="true"
                 data-active={isSelectionMode}
               >
-                <InsertDriveFileIcon />
+                <InsertDriveFileIcon fontSize="small" />
               </IconButton>
             </Tooltip>
             <Tooltip title="Save">
-              <IconButton onClick={this.handleSave}>
-                <SaveIcon />
+              <IconButton 
+                onClick={this.handleSave}
+                size="small"
+                sx={{ ml: 0.5 }}
+              >
+                <SaveIcon fontSize="small" />
               </IconButton>
             </Tooltip>
           </Box>
         </Box>
-        <Box sx={{ flexGrow: 1 }}>
+        <Box sx={{ 
+          flexGrow: 1, 
+          overflow: 'hidden',
+          width: '100%',
+          display: 'flex',
+        }}>
           {isLoading ? (
-            <div>Loading...</div>
+            <Box sx={{ p: 2 }}>Loading...</Box>
           ) : (
             <>
               {activeTab === 0 && (
@@ -311,27 +380,29 @@ export default class Editor extends Component<EditorProps, AppState> {
                 />
               )}
               {activeTab === 1 && (
-                <MarkdownLatexEditor 
-                  value={markdownValue} 
-                  onChange={this.handleMarkdownChange} 
-                  language='en'
-                  style={{ height: '100%' }}
-                  toolbar={{
-                    h1: true, 
-                    h2: true, 
-                    h3: true, 
-                    h4: true, 
-                    img: true, 
-                    link: true, 
-                    code: true, 
-                    preview: true, 
-                    expand: true, 
-                    undo: true, 
-                    redo: true, 
-                    save: false,
-                    subfield: true, 
-                  }}
-                />
+                <Box sx={{ width: '100%', height: '100%' }}>
+                  <MarkdownLatexEditor 
+                    value={markdownValue} 
+                    onChange={this.handleMarkdownChange} 
+                    language='en'
+                    style={{ height: '100%' }}
+                    toolbar={{
+                      h1: true, 
+                      h2: true, 
+                      h3: true, 
+                      h4: true, 
+                      img: true, 
+                      link: true, 
+                      code: true, 
+                      preview: true, 
+                      expand: true, 
+                      undo: true, 
+                      redo: true, 
+                      save: false,
+                      subfield: true, 
+                    }}
+                  />
+                </Box>
               )}
             </>
           )}
