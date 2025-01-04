@@ -1,0 +1,46 @@
+.markdown-preview-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px;
+  background-color: #f5f5f5;
+  min-width: min-content;
+}
+
+.markdown-page {
+  position: relative;
+  background: white;
+  box-shadow: 0 0 10px rgba(0,0,0,0.1);
+  margin-bottom: 20px;
+  min-height: 1123px;
+  width: 794px;
+  padding: 40px;
+  box-sizing: border-box;
+}
+
+.markdown-content {
+  height: 100%;
+}
+
+.page-break-preview {
+  border-bottom: 2px dashed #999;
+  margin: 20px 0;
+  page-break-after: always;
+}
+
+@media print {
+  .page-break-preview {
+    display: none;
+  }
+  
+  .markdown-page {
+    box-shadow: none;
+    margin: 0;
+    padding: 40px;
+    page-break-after: always;
+  }
+
+  .markdown-page:last-child {
+    page-break-after: auto;
+  }
+} 
