@@ -252,3 +252,17 @@ export async function deleteCollection(collectionId: string) {
         throw error;
     }
 }
+
+// Add this new function to update file metadata
+export async function updateFileMetadata(fileId: string, metadata: any) {
+    try {
+        const response = await serverPostResource('update_metadata', JSON.stringify({
+            file_id: fileId,
+            metadata: metadata
+        }));
+        return response;
+    } catch (error) {
+        console.error("Error updating file metadata:", error);
+        throw error;
+    }
+}

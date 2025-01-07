@@ -3,7 +3,7 @@ import MarkdownLatexEditor from 'markdown-latex';
 import LaTeXEditor from './LaTeXEditor';
 import { Box, IconButton, Tabs, Tab, Tooltip, CircularProgress } from '@mui/material';
 import SaveIcon from '@mui/icons-material/Save';
-import { saveFile, getFile } from '@/app/api';
+import { saveFile, getFile, updateFileMetadata } from '@/app/api';
 import { ActiveFileContext } from '../contexts/ActiveFileContext';
 import { Visibility, VisibilityOff } from '@mui/icons-material';
 import ShareIcon from '@mui/icons-material/Share';
@@ -12,6 +12,8 @@ import html2canvas from 'html2canvas';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import MarkdownEditor from './MarkdownEditor';
 import { splitContentByPages } from '../utils/pageBreakUtils';
+import EditIcon from '@mui/icons-material/Edit';
+import MetadataDialog, { FileMetadata } from './MetadataDialog';
 
 interface AppState {
   markdownValue: string;
@@ -21,6 +23,8 @@ interface AppState {
   activeTab: number;
   showPreview: boolean;
   isPdfLoading: boolean;
+  isMetadataDialogOpen: boolean;
+  metadata: FileMetadata;
 }
 
 interface EditorProps {
@@ -41,6 +45,11 @@ export default class Editor extends Component<EditorProps, AppState> {
 
   constructor(props: EditorProps) {
     super(props);
+    const defaultMetadata: FileMetadata = {
+      format: 'latex',
+      numberOfQuestions: 0,
+      structure: []
+    };
     this.state = {
       markdownValue: '',
       latexValue: '',
@@ -48,7 +57,9 @@ export default class Editor extends Component<EditorProps, AppState> {
       isLoading: false,
       activeTab: 0,
       showPreview: false,
-      isPdfLoading: false
+      isPdfLoading: false,
+      isMetadataDialogOpen: false,
+      metadata: defaultMetadata
     };
     this.handleMarkdownChange = this.handleMarkdownChange.bind(this);
     this.handleLatexChange = this.handleLatexChange.bind(this);
@@ -80,19 +91,31 @@ export default class Editor extends Component<EditorProps, AppState> {
       try {
         const fileData = await getFile(fileId);
         if (fileData && fileData.data && fileData.data.editor_files && fileData.data.editor_files[0]) {
-          const content = fileData.data.editor_files[0].content;
-          // Set the active tab based on file extension
+          const file = fileData.data.editor_files[0];
+          const content = file.content;
+          const metadata = file.metadata || {
+            format: getEditorTypeFromFileName(fileName) === 1 ? 'markdown' : 'latex',
+            numberOfQuestions: 0,
+            structure: []
+          };
+          
           const newActiveTab = getEditorTypeFromFileName(fileName);
           this.setState({ 
             markdownValue: content,
             latexValue: content,
-            activeTab: newActiveTab // Set the correct editor type
+            activeTab: newActiveTab,
+            metadata
           });
         } else {
           this.setState({ 
             markdownValue: '',
             latexValue: '',
-            activeTab: getEditorTypeFromFileName(fileName) // Set even if no content
+            activeTab: getEditorTypeFromFileName(fileName), // Set even if no content
+            metadata: {
+              format: getEditorTypeFromFileName(fileName) === 1 ? 'markdown' : 'latex',
+              numberOfQuestions: 0,
+              structure: []
+            }
           });
         }
       } catch (error) {
@@ -100,7 +123,12 @@ export default class Editor extends Component<EditorProps, AppState> {
         this.setState({ 
           markdownValue: '',
           latexValue: '',
-          activeTab: getEditorTypeFromFileName(fileName) // Set even on error
+          activeTab: getEditorTypeFromFileName(fileName), // Set even on error
+          metadata: {
+            format: getEditorTypeFromFileName(fileName) === 1 ? 'markdown' : 'latex',
+            numberOfQuestions: 0,
+            structure: []
+          }
         });
       } finally {
         this.setState({ isLoading: false });
@@ -109,7 +137,12 @@ export default class Editor extends Component<EditorProps, AppState> {
       this.setState({ 
         markdownValue: '',
         latexValue: '',
-        activeTab: getEditorTypeFromFileName(fileName) // Set even when no fileId
+        activeTab: getEditorTypeFromFileName(fileName), // Set even when no fileId
+        metadata: {
+          format: getEditorTypeFromFileName(fileName) === 1 ? 'markdown' : 'latex',
+          numberOfQuestions: 0,
+          structure: []
+        }
       });
     }
   }
@@ -254,6 +287,57 @@ export default class Editor extends Component<EditorProps, AppState> {
     }
   };
 
+  handleMetadataOpen = async () => {
+    const { fileId } = this.props;
+    
+    if (fileId) {
+      try {
+        const fileData = await getFile(fileId);
+        if (fileData?.data?.editor_files?.[0]?.metadata) {
+          const metadata = fileData.data.editor_files[0].metadata;
+          this.setState({ 
+            metadata,
+            isMetadataDialogOpen: true 
+          }, () => {
+          });
+        } else {
+          this.setState({ isMetadataDialogOpen: true });
+        }
+      } catch (error) {
+        console.error("Error loading metadata:", error);
+        this.setState({ isMetadataDialogOpen: true });
+      }
+    } else {
+      this.setState({ isMetadataDialogOpen: true });
+    }
+  };
+
+  handleMetadataClose = () => {
+    this.setState({ isMetadataDialogOpen: false });
+  };
+
+  handleMetadataSave = async (metadata: FileMetadata) => {
+    const { fileId } = this.props;
+    
+    if (!fileId) {
+      console.error('No file ID available');
+      return;
+    }
+
+    try {
+      const response = await updateFileMetadata(fileId, metadata);
+      
+      if (response && response.success) {
+        this.setState({ metadata });
+        console.log('Metadata updated successfully');
+      } else {
+        throw new Error('Failed to update metadata');
+      }
+    } catch (error) {
+      console.error('Error updating metadata:', error);
+    }
+  };
+
   render() {
     const { markdownValue, latexValue, isLoading, activeTab, showPreview, isPdfLoading } = this.state;
     const { collectionId, fileId, fileName } = this.props;
@@ -342,6 +426,15 @@ export default class Editor extends Component<EditorProps, AppState> {
                 <InsertDriveFileIcon fontSize="small" />
               </IconButton>
             </Tooltip>
+            <Tooltip title="Edit Metadata">
+              <IconButton 
+                onClick={this.handleMetadataOpen}
+                size="small"
+                sx={{ ml: 0.5 }}
+              >
+                <EditIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
             <Tooltip title="Save">
               <IconButton 
                 onClick={this.handleSave}
@@ -400,6 +493,13 @@ export default class Editor extends Component<EditorProps, AppState> {
             </>
           )}
         </Box>
+        <MetadataDialog
+          open={this.state.isMetadataDialogOpen}
+          onClose={this.handleMetadataClose}
+          onSave={this.handleMetadataSave}
+          fileName={this.props.fileName}
+          initialMetadata={this.state.metadata}
+        />
       </Box>
     )
   }
