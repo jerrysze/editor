@@ -4,9 +4,16 @@ import { Box } from '@mui/material';
 interface ResizeHandleProps {
   onResize: (width: number) => void;
   initialWidth: number;
+  minWidth?: number;
+  maxWidth?: number;
 }
 
-const ResizeHandle: React.FC<ResizeHandleProps> = ({ onResize, initialWidth }) => {
+const ResizeHandle: React.FC<ResizeHandleProps> = ({ 
+  onResize, 
+  initialWidth,
+  minWidth = 200,
+  maxWidth = 1200
+}) => {
   const handleMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
     
@@ -14,8 +21,9 @@ const ResizeHandle: React.FC<ResizeHandleProps> = ({ onResize, initialWidth }) =
     const startWidth = initialWidth;
     
     const handleMouseMove = (moveEvent: MouseEvent) => {
+      moveEvent.preventDefault();
       const deltaX = moveEvent.pageX - startX;
-      const newWidth = startWidth + deltaX;
+      const newWidth = Math.min(Math.max(startWidth + deltaX, minWidth), maxWidth);
       onResize(newWidth);
     };
     
@@ -39,6 +47,9 @@ const ResizeHandle: React.FC<ResizeHandleProps> = ({ onResize, initialWidth }) =
         cursor: 'col-resize',
         '&:hover': {
           backgroundColor: 'rgba(0, 0, 0, 0.1)',
+        },
+        '&:active': {
+          backgroundColor: 'rgba(0, 0, 0, 0.2)',
         },
         zIndex: 1200,
       }}

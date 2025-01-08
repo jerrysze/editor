@@ -38,7 +38,7 @@ const LaTeXEditor: React.FC<LaTeXEditorProps> = ({
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [compiling, setCompiling] = useState(false);
   const [compilationError, setCompilationError] = useState<string | null>(null);
-  const [editorWidth, setEditorWidth] = useState(DEFAULT_EDITOR_WIDTH);
+  const [editorWidth, setEditorWidth] = useState(0);
   const [zoom, setZoom] = useState(100);
 
   // A4 size in pixels (assuming 96 DPI)
@@ -48,6 +48,19 @@ const LaTeXEditor: React.FC<LaTeXEditorProps> = ({
   useEffect(() => {
     compileLatex(value);
   }, [value]);
+
+  useEffect(() => {
+    const container = document.getElementById('latex-editor-container');
+    if (container) {
+      if (showPreview) {
+        // When preview is enabled, set to 50% of container width
+        setEditorWidth(container.clientWidth / 2);
+      } else {
+        // When preview is disabled, reset width to 0
+        setEditorWidth(0);
+      }
+    }
+  }, [showPreview]); // Run when preview is toggled
 
   const handleChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newValue = event.target.value;
@@ -116,15 +129,15 @@ const LaTeXEditor: React.FC<LaTeXEditorProps> = ({
           display: 'flex',
           position: 'relative',
           overflow: 'hidden',
-          mt: '48px',
         }}
       >
         <Box
           sx={{
-            width: showPreview ? editorWidth : '100%',
+            width: showPreview ? `${editorWidth}px` : '100%',
             height: '100%',
             position: 'relative',
-            transition: showPreview ? 'none' : 'width 0.3s ease-in-out'
+            transition: showPreview ? 'none' : 'width 0.3s ease-in-out',
+            borderRight: showPreview ? '1px solid #e0e0e0' : 'none'
           }}
         >
           <textarea
@@ -138,14 +151,18 @@ const LaTeXEditor: React.FC<LaTeXEditorProps> = ({
               lineHeight: '1.5',
               fontFamily: 'monospace',
               fontSize: '14px',
-              border: '1px solid #e0e0e0',
-              borderRadius: '4px',
+              border: 'none',
               backgroundColor: '#ffffff',
             }}
             placeholder="Enter your LaTeX here..."
           />
           {showPreview && (
-            <ResizeHandle onResize={handleResize} initialWidth={editorWidth} />
+            <ResizeHandle 
+              onResize={handleResize} 
+              initialWidth={editorWidth}
+              minWidth={MIN_EDITOR_WIDTH}
+              maxWidth={MAX_EDITOR_WIDTH}
+            />
           )}
         </Box>
         {showPreview && (

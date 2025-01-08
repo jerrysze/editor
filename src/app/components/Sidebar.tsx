@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useContext } from 'react';
 import { Drawer, List, ListItem, Typography, IconButton, Menu, MenuItem, useTheme, Button, Box, FormControl, Select, InputLabel } from '@mui/material';
-import { ExpandMore, KeyboardArrowRight, FolderSpecial, PersonAdd, Add, MoreVert, InsertDriveFile } from '@mui/icons-material';
+import { ExpandMore, KeyboardArrowRight, FolderSpecial, PersonAdd, Add, MoreVert, InsertDriveFile, Menu as MenuIcon } from '@mui/icons-material';
 import SearchBar from './SearchBar';
 import DeleteConfirmDialog from './DeleteConfirmDialog';
 import { ActiveFileContext } from '../contexts/ActiveFileContext';
@@ -58,6 +58,7 @@ const Sidebar = () => {
   const [drawerWidth, setDrawerWidth] = useState(DEFAULT_DRAWER_WIDTH);
   const [highlightedCollection, setHighlightedCollection] = useState<string | null>(null);
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
+  const [isOpen, setIsOpen] = useState(true);
 
   useEffect(() => {
     loadCollectionStructure();
@@ -518,186 +519,206 @@ const Sidebar = () => {
       <Drawer
         variant="permanent"
         sx={{
-          width: drawerWidth,
+          width: isOpen ? drawerWidth : theme.spacing(7),
           flexShrink: 0,
           position: 'relative',
           '& .MuiDrawer-paper': {
-            width: drawerWidth,
+            width: isOpen ? drawerWidth : theme.spacing(7),
             boxSizing: 'border-box',
             position: 'static',
             height: '100%',
             backgroundColor: theme.palette.background.sidebar,
             display: 'flex',
             flexDirection: 'column',
-            transition: 'none',
+            transition: theme.transitions.create('width', {
+              easing: theme.transitions.easing.sharp,
+              duration: theme.transitions.duration.enteringScreen,
+            }),
+            overflowX: 'hidden',
           },
         }}
       >
-        <List sx={{ overflowY: 'auto', flexGrow: 1 }} ref={sidebarRef}>
-          <SearchBar
-            searchTerm={searchTerm}
-            setSearchTerm={setSearchTerm}
-          />
-          <Box sx={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: 1,
-            p: 1.5,
-          }}>
-            <FormControl fullWidth size="small">
-              <InputLabel>Collection</InputLabel>
-              <Select
-                value={selectedCollectionId || ''}
-                onChange={(e) => setSelectedCollectionId(e.target.value)}
-                label="Collection"
-              >
-                {collections.map((collection) => (
-                  <MenuItem key={collection.id} value={collection.id}>
-                    {collection.name}
-                  </MenuItem>
-                ))}
-                <MenuItem 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setAddingItem({ type: 'collection', parentId: null });
-                  }}
-                  sx={{ 
-                    color: 'primary.main',
-                    borderTop: 1,
-                    borderColor: 'divider'
-                  }}
+        <Box sx={{ 
+          display: 'flex', 
+          justifyContent: isOpen ? 'flex-end' : 'center',
+          p: 1,
+          borderBottom: 1,
+          borderColor: 'divider'
+        }}>
+          <IconButton onClick={() => setIsOpen(!isOpen)}>
+            <MenuIcon />
+          </IconButton>
+        </Box>
+
+        {isOpen && (
+          <List sx={{ overflowY: 'auto', flexGrow: 1 }} ref={sidebarRef}>
+            <SearchBar
+              searchTerm={searchTerm}
+              setSearchTerm={setSearchTerm}
+            />
+            <Box sx={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: 1,
+              p: 1.5,
+            }}>
+              <FormControl fullWidth size="small">
+                <InputLabel>Collection</InputLabel>
+                <Select
+                  value={selectedCollectionId || ''}
+                  onChange={(e) => setSelectedCollectionId(e.target.value)}
+                  label="Collection"
                 >
-                  <Add fontSize="small" sx={{ mr: 1 }} />
-                  New Collection
-                </MenuItem>
-              </Select>
-            </FormControl>
+                  {collections.map((collection) => (
+                    <MenuItem key={collection.id} value={collection.id}>
+                      {collection.name}
+                    </MenuItem>
+                  ))}
+                  <MenuItem 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setAddingItem({ type: 'collection', parentId: null });
+                    }}
+                    sx={{ 
+                      color: 'primary.main',
+                      borderTop: 1,
+                      borderColor: 'divider'
+                    }}
+                  >
+                    <Add fontSize="small" sx={{ mr: 1 }} />
+                    New Collection
+                  </MenuItem>
+                </Select>
+              </FormControl>
+              {selectedCollectionId && (
+                <IconButton
+                  size="small"
+                  onClick={(e) => handleMenuOpen(e, selectedCollectionId, 'collection', null)}
+                >
+                  <MoreVert fontSize="small" />
+                </IconButton>
+              )}
+            </Box>
+            
             {selectedCollectionId && (
-              <IconButton
-                size="small"
-                onClick={(e) => handleMenuOpen(e, selectedCollectionId, 'collection', null)}
-              >
-                <MoreVert fontSize="small" />
-            </IconButton>
-            )}
-          </Box>
-          
-          {selectedCollectionId && (
-            <>
-              {/* Show files directly without collection header */}
-              {collections.find(c => c.id === selectedCollectionId)?.files.map((file) => (
-                <ListItemButton
-                  key={file.id}
-                  onClick={() => isSelectionMode 
-                    ? handleFileSelection(file, selectedCollectionId)
-                    : handleItemClick(file.id, 'file')
-                  }
-                  selected={activeItem?.id === file.id && activeItem?.type === 'file'}
+              <>
+                {/* Show files directly without collection header */}
+                {collections.find(c => c.id === selectedCollectionId)?.files.map((file) => (
+                  <ListItemButton
+                    key={file.id}
+                    onClick={() => isSelectionMode 
+                      ? handleFileSelection(file, selectedCollectionId)
+                      : handleItemClick(file.id, 'file')
+                    }
+                    selected={activeItem?.id === file.id && activeItem?.type === 'file'}
+                    sx={{ pl: 3 }}
+                  >
+                    {isSelectionMode && (
+                      <ListItemIcon>
+                        <Checkbox
+                          checked={selectedFiles.some(f => f.fileId === file.id)}
+                          onChange={(e) => handleFileSelection(file, selectedCollectionId, e)}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      </ListItemIcon>
+                    )}
+                    <ListItemIcon>
+                      <InsertDriveFile fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText 
+                      primary={
+                        <Box component="span" sx={{ display: 'flex', alignItems: 'center' }}>
+                          {file.name}
+                          {selectedFiles.some(f => f.fileId === file.id) && (
+                            <Box
+                              component="span"
+                              sx={{
+                                marginLeft: 1,
+                                color: 'primary.main',
+                                fontWeight: 'bold',
+                                fontSize: '0.8rem'
+                              }}
+                            >
+                              ({selectedFiles.find(f => f.fileId === file.id)?.selectionOrder})
+                            </Box>
+                          )}
+                        </Box>
+                      }
+                      primaryTypographyProps={{ variant: 'body2' }} 
+                    />
+                    <IconButton
+                      edge="end"
+                      size="small"
+                      onClick={(e) => handleMenuOpen(e, file.id, 'file', selectedCollectionId)}
+                    >
+                      <MoreVert fontSize="small" />
+                    </IconButton>
+                  </ListItemButton>
+                ))}
+
+                {/* Add new file button */}
+                <ListItemButton 
+                  onClick={() => setAddingItem({ type: 'file', parentId: selectedCollectionId })}
                   sx={{ pl: 3 }}
                 >
-                  {isSelectionMode && (
-                    <ListItemIcon>
-                      <Checkbox
-                        checked={selectedFiles.some(f => f.fileId === file.id)}
-                        onChange={(e) => handleFileSelection(file, selectedCollectionId, e)}
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                    </ListItemIcon>
-                  )}
                   <ListItemIcon>
-                    <InsertDriveFile fontSize="small" />
+                    <Add fontSize="small" />
                   </ListItemIcon>
-                  <ListItemText 
-                    primary={
-                      <Box component="span" sx={{ display: 'flex', alignItems: 'center' }}>
-                        {file.name}
-                        {selectedFiles.some(f => f.fileId === file.id) && (
-                          <Box
-                            component="span"
-                            sx={{
-                              marginLeft: 1,
-                              color: 'primary.main',
-                              fontWeight: 'bold',
-                              fontSize: '0.8rem'
-                            }}
-                          >
-                            ({selectedFiles.find(f => f.fileId === file.id)?.selectionOrder})
-                          </Box>
-                        )}
-                      </Box>
-                    }
-                    primaryTypographyProps={{ variant: 'body2' }} 
-                  />
-                  <IconButton
-                    edge="end"
-                    size="small"
-                    onClick={(e) => handleMenuOpen(e, file.id, 'file', selectedCollectionId)}
-                  >
-                    <MoreVert fontSize="small" />
-                  </IconButton>
+                  <ListItemText primary="New File" primaryTypographyProps={{ variant: 'body2' }} />
                 </ListItemButton>
-              ))}
+              </>
+            )}
 
-              {/* Add new file button */}
-              <ListItemButton 
-                onClick={() => setAddingItem({ type: 'file', parentId: selectedCollectionId })}
-                sx={{ pl: 3 }}
-              >
-                <ListItemIcon>
-                  <Add fontSize="small" />
-                </ListItemIcon>
-                <ListItemText primary="New File" primaryTypographyProps={{ variant: 'body2' }} />
-              </ListItemButton>
-            </>
-          )}
-
-          {/* Add new item dialog */}
-          {addingItem && (
-            <ListItem sx={{ pl: 3 }}>
-              <TextField
-                size="small"
-                value={newItemName}
-                onChange={(e) => setNewItemName(e.target.value)}
-                onKeyPress={(e) => {
-                  if (e.key === 'Enter') {
-                    if (addingItem.type === 'collection') {
-                      addItem('collection', null);
-                    } else {
-                      addItem('file', selectedCollectionId);
+            {/* Add new item dialog */}
+            {addingItem && (
+              <ListItem sx={{ pl: 3 }}>
+                <TextField
+                  size="small"
+                  value={newItemName}
+                  onChange={(e) => setNewItemName(e.target.value)}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter') {
+                      if (addingItem.type === 'collection') {
+                        addItem('collection', null);
+                      } else {
+                        addItem('file', selectedCollectionId);
+                      }
                     }
-                  }
-                }}
-                placeholder={`New ${addingItem.type} name`}
-                autoFocus
-              />
-              <Button 
-                size="small" 
-                onClick={() => addItem(
-                  addingItem.type as 'collection' | 'file',
-                  addingItem.type === 'collection' ? null : selectedCollectionId
-                )}
-              >
-                Add
-              </Button>
-            </ListItem>
-          )}
-        </List>
+                  }}
+                  placeholder={`New ${addingItem.type} name`}
+                  autoFocus
+                />
+                <Button 
+                  size="small" 
+                  onClick={() => addItem(
+                    addingItem.type as 'collection' | 'file',
+                    addingItem.type === 'collection' ? null : selectedCollectionId
+                  )}
+                >
+                  Add
+                </Button>
+              </ListItem>
+            )}
+          </List>
+        )}
 
-        {/* Bottom buttons */}
-        <Box sx={{ 
-          borderTop: 1, 
-          borderColor: 'divider',
-          p: 1,
-          gap: 1,
-          width: '100%'
-        }}>
+        {isOpen && (
+          <Box sx={{ 
+            borderTop: 1, 
+            borderColor: 'divider',
+            p: 1,
+            gap: 1,
+            width: '100%'
+          }}>
             <MergeFilesButton 
               onRefresh={loadCollectionStructure} 
               onNewCollection={handleNewCollection}
-            selectedCollectionId={selectedCollectionId}
-          />
-        </Box>
-        <ResizeHandle onResize={handleResize} initialWidth={drawerWidth} />
+              selectedCollectionId={selectedCollectionId}
+            />
+          </Box>
+        )}
+        
+        {isOpen && <ResizeHandle onResize={handleResize} initialWidth={drawerWidth} />}
       </Drawer>
 
       {/* Menus and dialogs remain the same */}

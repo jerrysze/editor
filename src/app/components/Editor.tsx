@@ -1,7 +1,7 @@
 import React, { Component } from 'react';
 import MarkdownLatexEditor from 'markdown-latex';
 import LaTeXEditor from './LaTeXEditor';
-import { Box, IconButton, Tabs, Tab, Tooltip, CircularProgress } from '@mui/material';
+import { Box, IconButton, Tooltip, CircularProgress } from '@mui/material';
 import SaveIcon from '@mui/icons-material/Save';
 import { saveFile, getFile, updateFileMetadata } from '@/app/api';
 import { ActiveFileContext } from '../contexts/ActiveFileContext';
@@ -14,13 +14,14 @@ import MarkdownEditor from './MarkdownEditor';
 import { splitContentByPages } from '../utils/pageBreakUtils';
 import EditIcon from '@mui/icons-material/Edit';
 import MetadataDialog, { FileMetadata } from './MetadataDialog';
+import MetadataHeader from './MetadataHeader';
+import EditorToolbar from './EditorToolbar';
 
 interface AppState {
   markdownValue: string;
   latexValue: string;
   testResult: string;
   isLoading: boolean;
-  activeTab: number;
   showPreview: boolean;
   isPdfLoading: boolean;
   isMetadataDialogOpen: boolean;
@@ -55,7 +56,6 @@ export default class Editor extends Component<EditorProps, AppState> {
       latexValue: '',
       testResult: '',
       isLoading: false,
-      activeTab: 0,
       showPreview: false,
       isPdfLoading: false,
       isMetadataDialogOpen: false,
@@ -99,18 +99,15 @@ export default class Editor extends Component<EditorProps, AppState> {
             structure: []
           };
           
-          const newActiveTab = getEditorTypeFromFileName(fileName);
           this.setState({ 
             markdownValue: content,
             latexValue: content,
-            activeTab: newActiveTab,
             metadata
           });
         } else {
           this.setState({ 
             markdownValue: '',
             latexValue: '',
-            activeTab: getEditorTypeFromFileName(fileName), // Set even if no content
             metadata: {
               format: getEditorTypeFromFileName(fileName) === 1 ? 'markdown' : 'latex',
               numberOfQuestions: 0,
@@ -123,7 +120,6 @@ export default class Editor extends Component<EditorProps, AppState> {
         this.setState({ 
           markdownValue: '',
           latexValue: '',
-          activeTab: getEditorTypeFromFileName(fileName), // Set even on error
           metadata: {
             format: getEditorTypeFromFileName(fileName) === 1 ? 'markdown' : 'latex',
             numberOfQuestions: 0,
@@ -137,7 +133,6 @@ export default class Editor extends Component<EditorProps, AppState> {
       this.setState({ 
         markdownValue: '',
         latexValue: '',
-        activeTab: getEditorTypeFromFileName(fileName), // Set even when no fileId
         metadata: {
           format: getEditorTypeFromFileName(fileName) === 1 ? 'markdown' : 'latex',
           numberOfQuestions: 0,
@@ -180,10 +175,6 @@ export default class Editor extends Component<EditorProps, AppState> {
       console.error("Error saving file:", error);
       this.setState({ testResult: 'An error occurred while saving the file. Please try again.' });
     }
-  };
-
-  handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
-    this.setState({ activeTab: newValue });
   };
 
   togglePreview = () => {
@@ -339,7 +330,7 @@ export default class Editor extends Component<EditorProps, AppState> {
   };
 
   render() {
-    const { markdownValue, latexValue, isLoading, activeTab, showPreview, isPdfLoading } = this.state;
+    const { markdownValue, latexValue, isLoading, showPreview, isPdfLoading, metadata } = this.state;
     const { collectionId, fileId, fileName } = this.props;
     const { isSelectionMode } = this.context;
 
@@ -351,13 +342,14 @@ export default class Editor extends Component<EditorProps, AppState> {
         flexDirection: 'column',
         position: 'relative',
         maxWidth: '100%',
-        overflow: 'hidden', // Prevent horizontal scrolling
+        overflow: 'hidden',
       }}>
         <Box sx={{ 
           display: 'flex', 
-          justifyContent: 'space-between', 
+          justifyContent: 'space-between',
           alignItems: 'center',
-          p: 1,
+          py: 0.5,
+          px: 1,
           borderBottom: '1px solid #e0e0e0',
           backgroundColor: 'white',
           position: 'sticky',
@@ -366,85 +358,20 @@ export default class Editor extends Component<EditorProps, AppState> {
           minHeight: '48px',
           width: '100%',
         }}>
-          <Box sx={{ 
-            minWidth: 0, // Allow tabs to shrink if needed
-            flex: '0 1 auto',
-          }}>
-            <Tabs 
-              value={activeTab} 
-              onChange={this.handleTabChange}
-              sx={{
-                minHeight: '36px',
-                '& .MuiTab-root': {
-                  minHeight: '36px',
-                  padding: '6px 12px',
-                }
-              }}
-            >
-              <Tab label="LaTeX" />
-              <Tab label="Markdown" />
-            </Tabs>
-          </Box>
-          <Box sx={{ 
-            display: 'flex',
-            alignItems: 'center',
-            ml: 1,
-            flexShrink: 0, // Prevent buttons from shrinking
-          }}>
-            <Tooltip title={isPdfLoading ? "Generating PDF..." : "Share as PDF"}>
-              <IconButton 
-                onClick={this.handleShare} 
-                size="small"
-                sx={{ ml: 0.5 }}
-                disabled={isPdfLoading}
-              >
-                {isPdfLoading ? (
-                  <CircularProgress size={20} />
-                ) : (
-                  <ShareIcon fontSize="small" />
-                )}
-              </IconButton>
-            </Tooltip>
-            <Tooltip title={showPreview ? "Hide Preview" : "Show Preview"}>
-              <IconButton 
-                onClick={this.togglePreview} 
-                size="small"
-                sx={{ ml: 0.5 }}
-              >
-                {showPreview ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
-              </IconButton>
-            </Tooltip>
-            <Tooltip title={isSelectionMode ? "Cancel Insert" : "Insert File Content"}>
-              <IconButton 
-                onClick={this.handleInsertClick}
-                color={isSelectionMode ? "primary" : "default"}
-                size="small"
-                sx={{ ml: 0.5 }}
-                data-insert-mode="true"
-                data-active={isSelectionMode}
-              >
-                <InsertDriveFileIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-            <Tooltip title="Edit Metadata">
-              <IconButton 
-                onClick={this.handleMetadataOpen}
-                size="small"
-                sx={{ ml: 0.5 }}
-              >
-                <EditIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-            <Tooltip title="Save">
-              <IconButton 
-                onClick={this.handleSave}
-                size="small"
-                sx={{ ml: 0.5 }}
-              >
-                <SaveIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          </Box>
+          <MetadataHeader 
+            metadata={metadata}
+            fileName={fileName}
+          />
+          <EditorToolbar
+            showPreview={showPreview}
+            isPdfLoading={isPdfLoading}
+            isSelectionMode={isSelectionMode}
+            onSave={this.handleSave}
+            onShare={this.handleShare}
+            onTogglePreview={this.togglePreview}
+            onInsertClick={this.handleInsertClick}
+            onMetadataOpen={this.handleMetadataOpen}
+          />
         </Box>
         <Box sx={{ 
           flexGrow: 1, 
@@ -455,42 +382,25 @@ export default class Editor extends Component<EditorProps, AppState> {
           {isLoading ? (
             <Box sx={{ p: 2 }}>Loading...</Box>
           ) : (
-            <>
-              <Box sx={{ 
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                display: activeTab === 0 ? 'block' : 'none'
-              }}>
-                <LaTeXEditor
-                  collectionId={collectionId}
-                  fileId={fileId}
-                  fileName={fileName}
-                  value={latexValue}
-                  onContentChange={this.handleLatexChange}
-                  showPreview={showPreview}
-                />
-              </Box>
-              <Box sx={{ 
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                display: activeTab === 1 ? 'block' : 'none'
-              }}>
-                <MarkdownEditor
-                  collectionId={collectionId}
-                  fileId={fileId}
-                  fileName={fileName}
-                  value={markdownValue}
-                  onContentChange={this.handleMarkdownChange}
-                  showPreview={showPreview}
-                />
-              </Box>
-            </>
+            metadata.format === 'latex' ? (
+              <LaTeXEditor
+                collectionId={collectionId}
+                fileId={fileId}
+                fileName={fileName}
+                value={latexValue}
+                onContentChange={this.handleLatexChange}
+                showPreview={showPreview}
+              />
+            ) : (
+              <MarkdownEditor
+                collectionId={collectionId}
+                fileId={fileId}
+                fileName={fileName}
+                value={markdownValue}
+                onContentChange={this.handleMarkdownChange}
+                showPreview={showPreview}
+              />
+            )
           )}
         </Box>
         <MetadataDialog
