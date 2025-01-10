@@ -8,6 +8,32 @@ interface MetadataHeaderProps {
 }
 
 const MetadataHeader: React.FC<MetadataHeaderProps> = ({ metadata, fileName }) => {
+  const getDocumentTypeColor = () => {
+    switch (metadata.documentType) {
+      case 'question':
+        return 'primary';
+      case 'answer':
+        return 'success';
+      case 'marking_scheme':
+        return 'warning';
+      default:
+        return 'default';
+    }
+  };
+
+  const getDocumentTypeLabel = () => {
+    switch (metadata.documentType) {
+      case 'question':
+        return 'Question Paper';
+      case 'answer':
+        return 'Answer';
+      case 'marking_scheme':
+        return 'Marking Scheme';
+      default:
+        return metadata.documentType;
+    }
+  };
+
   return (
     <Box
       sx={{
@@ -39,6 +65,18 @@ const MetadataHeader: React.FC<MetadataHeaderProps> = ({ metadata, fileName }) =
           }
         }}
       />
+      <Chip
+        label={getDocumentTypeLabel()}
+        size="small"
+        color={getDocumentTypeColor()}
+        variant="outlined"
+        sx={{ 
+          height: '24px',
+          '& .MuiChip-label': {
+            px: 1
+          }
+        }}
+      />
       <Typography 
         variant="caption" 
         color="text.secondary"
@@ -48,21 +86,8 @@ const MetadataHeader: React.FC<MetadataHeaderProps> = ({ metadata, fileName }) =
           height: '24px'
         }}
       >
-        Questions: {metadata.numberOfQuestions}
+        Score: {metadata.score}
       </Typography>
-      {metadata.structure.length > 0 && (
-        <Typography 
-          variant="caption" 
-          color="text.secondary"
-          sx={{ 
-            display: 'flex',
-            alignItems: 'center',
-            height: '24px'
-          }}
-        >
-          Sections: {metadata.structure.length}
-        </Typography>
-      )}
     </Box>
   );
 };

@@ -26,6 +26,7 @@ interface AppState {
   isPdfLoading: boolean;
   isMetadataDialogOpen: boolean;
   metadata: FileMetadata;
+  activeTab: number;
 }
 
 interface EditorProps {
@@ -48,8 +49,8 @@ export default class Editor extends Component<EditorProps, AppState> {
     super(props);
     const defaultMetadata: FileMetadata = {
       format: 'latex',
-      numberOfQuestions: 0,
-      structure: []
+      score: 0,
+      documentType: 'question'
     };
     this.state = {
       markdownValue: '',
@@ -59,7 +60,8 @@ export default class Editor extends Component<EditorProps, AppState> {
       showPreview: false,
       isPdfLoading: false,
       isMetadataDialogOpen: false,
-      metadata: defaultMetadata
+      metadata: defaultMetadata,
+      activeTab: 0
     };
     this.handleMarkdownChange = this.handleMarkdownChange.bind(this);
     this.handleLatexChange = this.handleLatexChange.bind(this);
@@ -110,8 +112,8 @@ export default class Editor extends Component<EditorProps, AppState> {
             latexValue: '',
             metadata: {
               format: getEditorTypeFromFileName(fileName) === 1 ? 'markdown' : 'latex',
-              numberOfQuestions: 0,
-              structure: []
+              score: 0,
+              documentType: 'question'
             }
           });
         }
@@ -122,8 +124,8 @@ export default class Editor extends Component<EditorProps, AppState> {
           latexValue: '',
           metadata: {
             format: getEditorTypeFromFileName(fileName) === 1 ? 'markdown' : 'latex',
-            numberOfQuestions: 0,
-            structure: []
+            score: 0,
+            documentType: 'question'
           }
         });
       } finally {
@@ -135,8 +137,8 @@ export default class Editor extends Component<EditorProps, AppState> {
         latexValue: '',
         metadata: {
           format: getEditorTypeFromFileName(fileName) === 1 ? 'markdown' : 'latex',
-          numberOfQuestions: 0,
-          structure: []
+          score: 0,
+          documentType: 'question'
         }
       });
     }
