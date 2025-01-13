@@ -1,19 +1,57 @@
 # Editor Codebase Summary
 
 ## Project Overview
-A Next.js-based editor application that supports both Markdown and LaTeX editing with real-time preview capabilities. The application features a hierarchical collection system for organizing documents, with advanced file management and metadata support.
+A Next.js-based editor application that supports both Markdown and LaTeX editing with real-time preview capabilities. The application features a hierarchical collection system for organizing documents, with advanced file management, question-based metadata support, and document merging capabilities.
 
 ## Core Components
 
-### API Layer (`src/app/api.ts`)
-- Core API functions for resource management
-- Key endpoints:
-  - `getResource/serverGetResource`: Fetch resources from backend
-  - `postResource/serverPostResource`: Save/update resources
-  - `getCollectionStructure/saveCollectionStructure`: Manage document collections
-  - `saveFile/getFile/deleteFile`: File operations
-  - `renameCollection/deleteCollection`: Collection management
-  - `updateFileMetadata`: Metadata management
+### Data Model
+- Enhanced question-based metadata structure with validation:
+  ```typescript
+  interface ValidationResult {
+    isValid: boolean;
+    errors: string[];
+  }
+
+  interface FileMetadata {
+    documentType: 'question' | 'answer' | 'marking_scheme';
+    format: 'markdown' | 'latex';
+    score: number;
+    questionLabel: string;
+    questionNumbering?: QuestionNumbering;
+    groupId?: string;
+  }
+
+  interface QuestionNumbering {
+    mainNumber: number;
+    subQuestion?: string;
+    subSubQuestion?: string;
+  }
+
+  interface QuestionGroup {
+    label: string;
+    files: {
+      question?: string;
+      answer?: string;
+      markingScheme?: string;
+    };
+    metadata: FileMetadata;
+  }
+  ```
+
+### Document Management System
+- Question Group Management:
+  - Automatic grouping of related files (question/answer/marking scheme)
+  - Hierarchical question numbering
+  - Group-level operations (rename, delete)
+  - Smart validation (required: question + marking scheme, optional: answer)
+  - Transfer system with group-based validation
+
+- Document Merging System:
+  - PDF generation for both LaTeX and Markdown
+  - Ordered merging (question -> answer -> marking scheme)
+  - Multi-group support with sorting
+  - Format-specific PDF handling
 
 ### Editor Components
 
@@ -21,100 +59,59 @@ A Next.js-based editor application that supports both Markdown and LaTeX editing
 - Main editing interface with unified controls
 - Features:
   - Dual-mode editing (Markdown/LaTeX)
-  - Metadata management
+  - Question-based metadata management
   - File format detection
   - PDF export functionality
   - Real-time preview toggle
-  - File merging support
 
-#### LaTeX Editor (`src/app/components/LaTeXEditor.tsx`)
-- Specialized LaTeX editing interface
-- Features:
-  - Real-time LaTeX preview
-  - A4 page preview format
-  - PDF compilation via LaTeX Online API
-  - Zoom controls
-  - Resizable editor panes
+#### MergeOptionsDialog (`src/app/components/MergeOptionsDialog.tsx`)
+- Advanced document merging interface:
+  - Multi-group selection
+  - Document type filtering
+  - Ordered PDF generation and merging
+  - Progress feedback
+  - Error handling
 
-#### Markdown Editor (`src/app/components/MarkdownEditor.tsx`)
-- Dedicated Markdown editing component
-- Features:
-  - Real-time Markdown preview
-  - Page break support
-  - A4 page layout
-  - Zoom controls
-  - Custom toolbar integration
+#### Sidebar (`src/app/components/Sidebar.tsx`)
+- Enhanced file organization with:
+  - Question-based grouping
+  - Visual hierarchy for files
+  - Color-coded file types
+  - Group-level operations
+  - Collection management
 
-### Key UI Components
-1. `Sidebar.tsx`: Enhanced navigation with:
-   - Collection management
-   - File selection modes
-   - Resizable panel
-   - Search functionality
-   - Context menu operations
-
-2. `EditorToolbar.tsx`: Unified toolbar with:
-   - Save functionality
-   - Preview toggle
-   - PDF export
-   - File insertion
-   - Metadata editing
-
-3. `MetadataDialog.tsx`: Metadata management with:
-   - Format selection
-   - Question structure
-   - Section management
-   - Marking scheme support
-
-4. `MergeFilesButton.tsx`: File merging interface with:
-   - Multi-file selection
-   - Order preservation
-   - Content combination
-   - Collection refresh
-
-### Application Structure
-- Next.js frontend with TypeScript
-- Context-based state management
-- RESTful API integration
-- Material-UI components
-- Responsive design
-
-## Core Features
-1. Document Management
-   - Hierarchical collection structure
-   - File operations (CRUD)
-   - Metadata support
-   - File merging capability
+### Key Features
+1. Question Management
+   - Question/Answer/Marking Scheme grouping
+   - Smart file requirements (Q+MS required, Answer optional)
+   - Score tracking
+   - Question labeling
+   - Group validation
 
 2. Editor Capabilities
    - Unified interface for Markdown/LaTeX
    - Real-time preview
    - PDF export
-   - Page break support
-   - Zoom controls
+   - Question metadata support
 
-3. Metadata System
-   - Format specification
-   - Question structuring
-   - Section management
-   - Marking schemes
+3. Document Merging
+   - Multi-format support (Markdown/LaTeX)
+   - Ordered document combination
+   - PDF generation and merging
+   - Group-based organization
+
+4. File Organization
+   - Hierarchical collection system
+   - Question group management
+   - Automated file naming
+   - Metadata synchronization
 
 ## Technical Stack
 - Frontend: Next.js, TypeScript, React
 - UI Framework: Material-UI
 - State Management: React Context
+- PDF Generation: pdf-lib, html2canvas, jsPDF
+- API Integration: GraphQL (Hasura)
 - Editor Libraries: markdown-latex, markdown-it
-- PDF Generation: jsPDF, html2canvas
-- LaTeX Compilation: LaTeX Online API
 
-## Key Files and Their Purposes
-- `api.ts`: Core backend communication
-- `Editor.tsx`: Main editing interface
-- `LaTeXEditor.tsx`: LaTeX-specific editing
-- `MarkdownEditor.tsx`: Markdown-specific editing
-- `MetadataDialog.tsx`: Metadata management
-- `EditorToolbar.tsx`: Unified toolbar interface
-- `Sidebar.tsx`: Navigation and file management
-- `MergeFilesButton.tsx`: File merging functionality
-
-This codebase represents a sophisticated document editor with comprehensive metadata management, file organization, and format-specific editing capabilities. Recent updates have enhanced the metadata system and file management features while maintaining a clean, intuitive user interface. 
+This codebase represents a sophisticated document editor with comprehensive question management capabilities and advanced document merging features, focusing on maintaining relationships between questions, answers, and marking schemes while providing a clean, intuitive user interface. 

@@ -1,4 +1,4 @@
-export const PAGE_BREAK_MARKER = '<!-- pagebreak -->';
+export const PAGE_BREAK_MARKER = '<!--pagebreak-->';
 
 export const A4_DIMENSIONS = {
   width: 794, // pixels at 96 DPI
@@ -6,11 +6,11 @@ export const A4_DIMENSIONS = {
   padding: 40
 };
 
-export const splitContentByPages = (content: string): string[] => {
+export function splitContentByPages(content: string): string[] {
   return content.split(PAGE_BREAK_MARKER).map(page => page.trim());
-};
+}
 
-export const addPageBreakStyles = () => {
+export function addPageBreakStyles() {
   const style = document.createElement('style');
   style.textContent = `
     .page-break-preview {
@@ -30,4 +30,4 @@ export const addPageBreakStyles = () => {
     }
   `;
   document.head.appendChild(style);
-}; 
+} 

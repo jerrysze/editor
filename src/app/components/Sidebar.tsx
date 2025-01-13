@@ -1,24 +1,75 @@
 import React, { useState, useEffect, useRef, useContext } from 'react';
-import { Drawer, List, ListItem, Typography, IconButton, Menu, MenuItem, useTheme, Button, Box, FormControl, Select, InputLabel } from '@mui/material';
-import { ExpandMore, KeyboardArrowRight, FolderSpecial, PersonAdd, Add, MoreVert, InsertDriveFile, Menu as MenuIcon } from '@mui/icons-material';
+import { 
+  Drawer, 
+  List, 
+  ListItem, 
+  Typography, 
+  IconButton, 
+  Menu, 
+  MenuItem, 
+  useTheme, 
+  Button, 
+  Box, 
+  FormControl, 
+  Select, 
+  InputLabel,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  ListItemIcon,
+  ListItemText,
+  ListItemButton
+} from '@mui/material';
+
+import { 
+  ExpandMore, 
+  KeyboardArrowRight, 
+  FolderSpecial, 
+  PersonAdd, 
+  Add, 
+  MoreVert, 
+  InsertDriveFile, 
+  Menu as MenuIcon, 
+  Description, 
+  QuestionAnswer, 
+  Assignment, 
+  ExpandLess, 
+  Delete,
+  Edit
+} from '@mui/icons-material';
+
 import SearchBar from './SearchBar';
 import DeleteConfirmDialog from './DeleteConfirmDialog';
 import { ActiveFileContext } from '../contexts/ActiveFileContext';
-import { getCollectionStructure, saveCollectionStructure, deleteFile, deleteCollection, renameCollection } from '@/app/api';
+import { 
+  getCollectionStructure, 
+  saveCollectionStructure,
+  deleteFile, 
+  deleteCollection, 
+  renameCollection,
+} from '@/app/api';
 import { Collection, File } from '@/app/types';
 import MergeFilesButton from './MergeFilesButton';
 import ResizeHandle from './ResizeHandle';
 import { 
-  TextField,
   Checkbox,
-  ListItemIcon,
-  ListItemText,
-  ListItemButton 
 } from '@mui/material';
+import { TransferToExamButton } from './TransferToExamButton';
+import AddQuestionDialog from './AddQuestionDialog';
+import { FileMetadata, QuestionNumbering, QuestionGroup } from '../types/metadata';
+import { serverPostResource } from '@/app/api';
 
 const MIN_DRAWER_WIDTH = 200;
 const MAX_DRAWER_WIDTH = 600;
-const DEFAULT_DRAWER_WIDTH = 240;
+const DEFAULT_DRAWER_WIDTH = 200;
+
+const FILE_TYPE_COLORS = {
+  question: '#2196f3',    // Blue
+  answer: '#4caf50',      // Green
+  marking: '#ff9800'      // Orange
+};
 
 export interface Template {
   id: string;
@@ -27,6 +78,92 @@ export interface Template {
 
 export const sortByName = <T extends { name: string }>(items: T[]): T[] => {
   return [...items].sort((a, b) => a.name.localeCompare(b.name));
+};
+
+const generateFileName = (numbering: QuestionNumbering, type: 'question' | 'answer' | 'marking_scheme'): string => {
+  let baseName = `Question-${numbering.mainNumber}`;
+  if (numbering.subQuestion) {
+    baseName += `-${numbering.subQuestion}`;
+  }
+  if (numbering.subSubQuestion) {
+    baseName += `-${numbering.subSubQuestion}`;
+  }
+  
+  switch (type) {
+    case 'answer':
+      return `${baseName}-answer`;
+    case 'marking_scheme':
+      return `${baseName}-marking`;
+    default:
+      return baseName;
+  }
+};
+
+const generateQuestionLabel = (numbering: QuestionNumbering): string => {
+  let label = `Question ${numbering.mainNumber}`;
+  if (numbering.subQuestion) {
+    label += `${numbering.subQuestion}`;
+  }
+  if (numbering.subSubQuestion) {
+    label += `${numbering.subSubQuestion}`;
+  }
+  return label;
+};
+
+const groupFilesByQuestion = (files: File[]): QuestionGroup[] => {
+  const groups: { [key: string]: QuestionGroup } = {};
+
+  files.forEach(file => {
+    const match = file.name.match(/Question-(\d+)(?:-([a-z]))?(?:-([a-z]))?(?:-(answer|marking))?$/i);
+    if (!match) return;
+
+    const [, mainNumber, subQuestion, subSubQuestion, type] = match;
+    let label = `Question ${mainNumber}`;
+    if (subQuestion) label += subQuestion.toUpperCase();
+    if (subSubQuestion) label += subSubQuestion.toUpperCase();
+
+    if (!groups[label]) {
+      groups[label] = {
+        label,
+        files: {
+          question: undefined,
+          answer: undefined,
+          markingScheme: undefined
+        },
+        metadata: {
+          documentType: 'question',
+          format: 'markdown',
+          score: 0,
+          questionLabel: label,
+          questionNumbering: {
+            mainNumber: parseInt(mainNumber),
+            subQuestion,
+            subSubQuestion
+          }
+        }
+      };
+    }
+
+    if (type === 'answer') {
+      groups[label].files.answer = file.id;
+    } else if (type === 'marking') {
+      groups[label].files.markingScheme = file.id;
+    } else {
+      groups[label].files.question = file.id;
+    }
+  });
+
+  return Object.values(groups).sort((a, b) => {
+    const aMatch = a.label.match(/Question (\d+)([a-z])?([a-z])?/i);
+    const bMatch = b.label.match(/Question (\d+)([a-z])?([a-z])?/i);
+    if (!aMatch || !bMatch) return 0;
+    
+    const aNum = parseInt(aMatch[1]);
+    const bNum = parseInt(bMatch[1]);
+    if (aNum !== bNum) return aNum - bNum;
+    
+    return (aMatch[2] || '').localeCompare(bMatch[2] || '');
+  });
 };
 
 const Sidebar = () => {
@@ -59,6 +196,17 @@ const Sidebar = () => {
   const [highlightedCollection, setHighlightedCollection] = useState<string | null>(null);
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(true);
+  const [isAddQuestionDialogOpen, setIsAddQuestionDialogOpen] = useState(false);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [groupMenuAnchor, setGroupMenuAnchor] = useState<{ element: HTMLElement; group: QuestionGroup } | null>(null);
+  const [renamingGroup, setRenamingGroup] = useState<QuestionGroup | null>(null);
+  const [newQuestionNumbering, setNewQuestionNumbering] = useState<QuestionNumbering>({
+    mainNumber: 1,
+    subQuestion: '',
+    subSubQuestion: ''
+  });
+
+  const HASURA_ENDPOINT = process.env.NEXT_PUBLIC_HASURA_ENDPOINT || 'http://localhost:8080/v1/graphql';
 
   useEffect(() => {
     loadCollectionStructure();
@@ -120,33 +268,100 @@ const Sidebar = () => {
     setSelectedItem(null);
   };
 
-  const addItem = async (type: 'collection' | 'file', parentId: string | null) => {
-    if (newItemName.trim()) {
-      const newItem = { id: Date.now().toString(), name: newItemName };
-      let updatedCollections: Collection[];
-      if (parentId === null) {
-        if (type === 'collection') {
-          updatedCollections = [...collections, { ...newItem, files: [], collections: [], isOpen: true }];
-        } else {
-          console.error("Cannot add a file without a parent collection");
-          return;
-        }
-      } else {
-        updatedCollections = updateCollections(collections, parentId, type, newItem);
+  const addItem = async (
+    type: 'collection' | 'file', 
+    parentId: string | null, 
+    name?: string,
+    metadata?: FileMetadata
+  ) => {
+    try {
+      const itemName = name || newItemName;
+      if (!itemName) {
+        console.error('No item name provided');
+        return;
       }
-      updatedCollections.sort((a, b) => a.name.localeCompare(b.name));
-      setCollections(updatedCollections);
-      setNewItemName('');
-      setAddingItem(null);
+      
+      if (!parentId && type === 'file') {
+        console.error('Cannot create file without parent collection');
+        return;
+      }
 
-      // Save the updated structure
-      try {
+      console.log(`Creating ${type} "${itemName}" in collection ${parentId} with metadata:`, metadata);
+
+      if (type === 'collection') {
+        // Create new collection
+        const newCollection: Collection = {
+          id: Date.now().toString(),
+          name: itemName,
+          files: [],
+          collections: [],
+          isOpen: true
+        };
+        
+        // Create a new array with the updated structure
+        let updatedCollections: Collection[];
+        
+        if (parentId) {
+          // Add to specific parent collection
+          updatedCollections = collections.map(col => {
+            if (col.id === parentId) {
+              return {
+                ...col,
+                collections: [...col.collections, newCollection].sort((a, b) => 
+                  a.name.localeCompare(b.name)
+                )
+              };
+            } else {
+              return col;
+            }
+          });
+        } else {
+          // Add to root level
+          updatedCollections = [...collections, newCollection].sort((a, b) => 
+            a.name.localeCompare(b.name)
+          );
+        }
+        
+        // Save the updated structure
         await saveCollectionStructure(updatedCollections);
-        console.log("Collection structure saved successfully");
-      } catch (error) {
-        console.error("Failed to save collection structure:", error);
-        // Optionally, you can add some user feedback here
+        
+        // Update local state
+        setCollections(updatedCollections);
+      } else {
+        // Handle file creation using the API route
+        const fileId = Date.now().toString();
+        const response = await fetch('/api/files', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            file_id: fileId,
+            file_name: itemName,
+            collection_id: parentId,
+            content: '',
+            metadata: metadata || null
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to create file');
+        }
+
+        const data = await response.json();
+        console.log('File creation response:', data);
+
+        // Refresh the collection structure after successful file creation
+        await loadCollectionStructure();
+        return data;
       }
+
+      setAddingItem(null);
+      setNewItemName('');
+    } catch (error) {
+      console.error(`Error creating ${type}:`, error);
+      throw error;
     }
   };
 
@@ -514,6 +729,174 @@ const Sidebar = () => {
     }
   }, [collections, selectedCollectionId]);
 
+  const handleAddQuestion = async (metadata: FileMetadata, files: string[]) => {
+    try {
+      console.log('Creating files:', files);
+      console.log('With metadata:', metadata);
+      
+      // Create files with the generated names
+      for (const fileName of files) {
+        const documentType = fileName.endsWith('-answer') 
+          ? 'answer' 
+          : fileName.endsWith('-marking') 
+            ? 'marking_scheme' 
+            : 'question';
+
+        // Update the metadata with the proper question label format
+        const fileMetadata = {
+          ...metadata,
+          documentType,
+          questionLabel: generateQuestionLabel(metadata.questionNumbering || { mainNumber: 1 })
+        };
+        
+        // Generate the proper file name using the helper function
+        const properFileName = generateFileName(
+          metadata.questionNumbering || { mainNumber: 1 },
+          documentType
+        );
+        
+        console.log(`Creating file "${properFileName}" with metadata:`, fileMetadata);
+        
+        try {
+          const response = await addItem('file', selectedCollectionId, properFileName, fileMetadata);
+          
+          if (response?.data?.insert_editor_files_one?.file_id) {
+            const fileId = response.data.insert_editor_files_one.file_id;
+            await serverPostResource('update_metadata', JSON.stringify({
+              file_id: fileId,
+              metadata: fileMetadata  // Using the updated metadata with proper question label
+            }));
+            console.log(`Updated metadata for file ${fileId}:`, fileMetadata);
+          } else {
+            console.error('Failed to get file ID from response:', response);
+          }
+        } catch (error) {
+          console.error(`Failed to create/update file "${properFileName}":`, error);
+          throw error;
+        }
+      }
+      
+      // Refresh the collection structure after creating all files
+      console.log('Refreshing collection structure...');
+      await loadCollectionStructure();
+      
+      // Close the dialog after successful creation
+      setIsAddQuestionDialogOpen(false);
+    } catch (error) {
+      console.error('Error adding question files:', error);
+    }
+  };
+
+  const toggleGroup = (groupLabel: string) => {
+    setCollapsedGroups(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(groupLabel)) {
+        newSet.delete(groupLabel);
+      } else {
+        newSet.add(groupLabel);
+      }
+      return newSet;
+    });
+  };
+
+  const handleGroupMenuOpen = (event: React.MouseEvent<HTMLButtonElement>, group: QuestionGroup) => {
+    event.stopPropagation();
+    setGroupMenuAnchor({ element: event.currentTarget, group });
+  };
+
+  const handleGroupMenuClose = () => {
+    setGroupMenuAnchor(null);
+  };
+
+  const handleRenameGroup = async () => {
+    if (!groupMenuAnchor?.group || !selectedCollectionId) return;
+    
+    const group = groupMenuAnchor.group;
+    setRenamingGroup(group);
+    setNewQuestionNumbering(group.metadata.questionNumbering || { mainNumber: 1 });
+    handleGroupMenuClose();
+  };
+
+  const handleSaveGroupRename = async () => {
+    if (!renamingGroup || !selectedCollectionId) return;
+    
+    try {
+      const newLabel = generateQuestionLabel(newQuestionNumbering);
+      
+      // Update each file in the group
+      const fileUpdates = Object.entries(renamingGroup.files).map(async ([type, fileId]) => {
+        if (!fileId) return;
+
+        const fileType = type === 'question' 
+          ? 'question' 
+          : type === 'answer' 
+            ? 'answer' 
+            : 'marking_scheme';
+
+        const newFileName = generateFileName(newQuestionNumbering, fileType);
+        
+        // Update file metadata
+        const updatedMetadata: FileMetadata = {
+          ...renamingGroup.metadata,
+          questionLabel: newLabel,
+          questionNumbering: newQuestionNumbering
+        };
+
+        // Update file using the API route
+        const response = await fetch('/api/files/update', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            fileId,
+            fileName: newFileName,
+            metadata: updatedMetadata
+          })
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || 'Failed to update file');
+        }
+
+        return response.json();
+      });
+
+      await Promise.all(fileUpdates);
+      await loadCollectionStructure();
+      setRenamingGroup(null);
+    } catch (error) {
+      console.error('Error renaming group:', error);
+    }
+  };
+
+  const handleDeleteGroup = async () => {
+    if (!groupMenuAnchor?.group || !selectedCollectionId) return;
+    
+    const group = groupMenuAnchor.group;
+    const filesToDelete = [
+      group.files.question,
+      group.files.answer,
+      group.files.markingScheme
+    ].filter(Boolean);
+
+    for (const fileId of filesToDelete) {
+      if (fileId) {
+        await deleteFile(fileId);
+      }
+    }
+
+    await loadCollectionStructure();
+    handleGroupMenuClose();
+  };
+
+  const questionGroups = selectedCollectionId 
+    ? groupFilesByQuestion(collections.flatMap(c => 
+        c.id === selectedCollectionId ? c.files : []
+      ))
+    : [];
+
   return (
     <>
       <Drawer
@@ -602,70 +985,225 @@ const Sidebar = () => {
             
             {selectedCollectionId && (
               <>
-                {/* Show files directly without collection header */}
-                {collections.find(c => c.id === selectedCollectionId)?.files.map((file) => (
-                  <ListItemButton
-                    key={file.id}
-                    onClick={() => isSelectionMode 
-                      ? handleFileSelection(file, selectedCollectionId)
-                      : handleItemClick(file.id, 'file')
-                    }
-                    selected={activeItem?.id === file.id && activeItem?.type === 'file'}
-                    sx={{ pl: 3 }}
-                  >
-                    {isSelectionMode && (
-                      <ListItemIcon>
-                        <Checkbox
-                          checked={selectedFiles.some(f => f.fileId === file.id)}
-                          onChange={(e) => handleFileSelection(file, selectedCollectionId, e)}
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                      </ListItemIcon>
-                    )}
-                    <ListItemIcon>
-                      <InsertDriveFile fontSize="small" />
-                    </ListItemIcon>
-                    <ListItemText 
-                      primary={
-                        <Box component="span" sx={{ display: 'flex', alignItems: 'center' }}>
-                          {file.name}
-                          {selectedFiles.some(f => f.fileId === file.id) && (
-                            <Box
-                              component="span"
-                              sx={{
-                                marginLeft: 1,
-                                color: 'primary.main',
-                                fontWeight: 'bold',
-                                fontSize: '0.8rem'
-                              }}
-                            >
-                              ({selectedFiles.find(f => f.fileId === file.id)?.selectionOrder})
-                            </Box>
-                          )}
-                        </Box>
+                {groupFilesByQuestion(collections.find(c => c.id === selectedCollectionId)?.files || []).map((group) => (
+                  <Box 
+                    key={group.label} 
+                    sx={{ 
+                      mb: 1,
+                      borderLeft: 2,
+                      borderColor: 'divider',
+                      '&:hover': {
+                        borderColor: 'primary.main',
                       }
-                      primaryTypographyProps={{ variant: 'body2' }} 
-                    />
-                    <IconButton
-                      edge="end"
-                      size="small"
-                      onClick={(e) => handleMenuOpen(e, file.id, 'file', selectedCollectionId)}
+                    }}
+                  >
+                    <ListItemButton
+                      onClick={() => toggleGroup(group.label)}
+                      sx={{
+                        pl: 2,
+                        py: 0.5,
+                        borderBottom: 1,
+                        borderColor: 'divider',
+                        backgroundColor: theme.palette.mode === 'dark' 
+                          ? 'rgba(255, 255, 255, 0.05)'
+                          : 'rgba(0, 0, 0, 0.02)',
+                        '&:hover': {
+                          backgroundColor: theme.palette.mode === 'dark'
+                            ? 'rgba(255, 255, 255, 0.08)'
+                            : 'rgba(0, 0, 0, 0.04)',
+                        },
+                      }}
                     >
-                      <MoreVert fontSize="small" />
-                    </IconButton>
-                  </ListItemButton>
+                      <ListItemIcon>
+                        {collapsedGroups.has(group.label) ? <ExpandMore /> : <ExpandLess />}
+                      </ListItemIcon>
+                      <ListItemText
+                        primary={group.label}
+                        primaryTypographyProps={{
+                          variant: 'subtitle2',
+                          fontWeight: 600,
+                          color: 'text.primary'
+                        }}
+                      />
+                      <IconButton
+                        size="small"
+                        onClick={(e) => handleGroupMenuOpen(e, group)}
+                      >
+                        <MoreVert fontSize="small" />
+                      </IconButton>
+                    </ListItemButton>
+                    
+                    {!collapsedGroups.has(group.label) && (
+                      <>
+                        {group.files.question && (
+                          <ListItemButton
+                            sx={{
+                              pl: 3,
+                              py: 0.5,
+                              '&:hover': {
+                                backgroundColor: theme.palette.mode === 'dark'
+                                  ? 'rgba(33, 150, 243, 0.08)'
+                                  : 'rgba(33, 150, 243, 0.04)',
+                              },
+                              ...(activeItem?.id === group.files.question && {
+                                backgroundColor: theme.palette.mode === 'dark'
+                                  ? 'rgba(33, 150, 243, 0.16)'
+                                  : 'rgba(33, 150, 243, 0.08)',
+                              })
+                            }}
+                            onClick={() => isSelectionMode
+                              ? handleFileSelection({ id: group.files.question!, name: generateFileName(group.metadata.questionNumbering!, 'question') }, selectedCollectionId)
+                              : handleItemClick(group.files.question!, 'file')
+                            }
+                            selected={activeItem?.id === group.files.question}
+                          >
+                            <ListItemIcon>
+                              <Description sx={{ color: FILE_TYPE_COLORS.question }} fontSize="small" />
+                            </ListItemIcon>
+                            <ListItemText 
+                              primary="Question"
+                              primaryTypographyProps={{ 
+                                variant: 'body2',
+                                color: 'text.primary'
+                              }}
+                            />
+                            <IconButton
+                              size="small"
+                              onClick={(e) => handleMenuOpen(e, group.files.question!, 'file', selectedCollectionId)}
+                            >
+                              <MoreVert fontSize="small" />
+                            </IconButton>
+                          </ListItemButton>
+                        )}
+
+                        {group.files.answer && (
+                          <ListItemButton
+                            sx={{
+                              pl: 3,
+                              py: 0.5,
+                              '&:hover': {
+                                backgroundColor: theme.palette.mode === 'dark'
+                                  ? 'rgba(76, 175, 80, 0.08)'
+                                  : 'rgba(76, 175, 80, 0.04)',
+                              },
+                              ...(activeItem?.id === group.files.answer && {
+                                backgroundColor: theme.palette.mode === 'dark'
+                                  ? 'rgba(76, 175, 80, 0.16)'
+                                  : 'rgba(76, 175, 80, 0.08)',
+                              })
+                            }}
+                            onClick={() => isSelectionMode
+                              ? handleFileSelection({ id: group.files.answer!, name: generateFileName(group.metadata.questionNumbering!, 'answer') }, selectedCollectionId)
+                              : handleItemClick(group.files.answer!, 'file')
+                            }
+                            selected={activeItem?.id === group.files.answer}
+                          >
+                            <ListItemIcon>
+                              <QuestionAnswer sx={{ color: FILE_TYPE_COLORS.answer }} fontSize="small" />
+                            </ListItemIcon>
+                            <ListItemText 
+                              primary="Answer"
+                              primaryTypographyProps={{ 
+                                variant: 'body2',
+                                color: 'text.primary'
+                              }}
+                            />
+                            <IconButton
+                              size="small"
+                              onClick={(e) => handleMenuOpen(e, group.files.answer!, 'file', selectedCollectionId)}
+                            >
+                              <MoreVert fontSize="small" />
+                            </IconButton>
+                          </ListItemButton>
+                        )}
+
+                        {group.files.markingScheme && (
+                          <ListItemButton
+                            sx={{
+                              pl: 3,
+                              py: 0.5,
+                              '&:hover': {
+                                backgroundColor: theme.palette.mode === 'dark'
+                                  ? 'rgba(255, 152, 0, 0.08)'
+                                  : 'rgba(255, 152, 0, 0.04)',
+                              },
+                              ...(activeItem?.id === group.files.markingScheme && {
+                                backgroundColor: theme.palette.mode === 'dark'
+                                  ? 'rgba(255, 152, 0, 0.16)'
+                                  : 'rgba(255, 152, 0, 0.08)',
+                              })
+                            }}
+                            onClick={() => isSelectionMode
+                              ? handleFileSelection({ id: group.files.markingScheme!, name: generateFileName(group.metadata.questionNumbering!, 'marking_scheme') }, selectedCollectionId)
+                              : handleItemClick(group.files.markingScheme!, 'file')
+                            }
+                            selected={activeItem?.id === group.files.markingScheme}
+                          >
+                            <ListItemIcon>
+                              <Assignment sx={{ color: FILE_TYPE_COLORS.marking }} fontSize="small" />
+                            </ListItemIcon>
+                            <ListItemText 
+                              primary="Marking Scheme"
+                              primaryTypographyProps={{ 
+                                variant: 'body2',
+                                color: 'text.primary'
+                              }}
+                            />
+                            <IconButton
+                              size="small"
+                              onClick={(e) => handleMenuOpen(e, group.files.markingScheme!, 'file', selectedCollectionId)}
+                            >
+                              <MoreVert fontSize="small" />
+                            </IconButton>
+                          </ListItemButton>
+                        )}
+                      </>
+                    )}
+                  </Box>
                 ))}
 
-                {/* Add new file button */}
+                {/* Group actions menu */}
+                <Menu
+                  anchorEl={groupMenuAnchor?.element}
+                  open={Boolean(groupMenuAnchor)}
+                  onClose={handleGroupMenuClose}
+                >
+                  <MenuItem onClick={handleRenameGroup}>
+                    <ListItemIcon>
+                      <Edit fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText primary="Change Question Number" />
+                  </MenuItem>
+                  <MenuItem 
+                    onClick={handleDeleteGroup}
+                    sx={{ color: 'error.main' }}
+                  >
+                    <ListItemIcon>
+                      <Delete fontSize="small" sx={{ color: 'error.main' }} />
+                    </ListItemIcon>
+                    <ListItemText primary="Delete Question" />
+                  </MenuItem>
+                </Menu>
+
+                {/* Add Question button */}
                 <ListItemButton 
-                  onClick={() => setAddingItem({ type: 'file', parentId: selectedCollectionId })}
+                  onClick={() => setIsAddQuestionDialogOpen(true)}
                   sx={{ pl: 3 }}
                 >
                   <ListItemIcon>
                     <Add fontSize="small" />
                   </ListItemIcon>
-                  <ListItemText primary="New File" primaryTypographyProps={{ variant: 'body2' }} />
+                  <ListItemText 
+                    primary="Add Question" 
+                    primaryTypographyProps={{ variant: 'body2' }} 
+                  />
                 </ListItemButton>
+
+                <AddQuestionDialog
+                  open={isAddQuestionDialogOpen}
+                  onClose={() => setIsAddQuestionDialogOpen(false)}
+                  onAdd={handleAddQuestion}
+                />
               </>
             )}
 
@@ -708,11 +1246,17 @@ const Sidebar = () => {
             borderColor: 'divider',
             p: 1,
             gap: 1,
-            width: '100%'
+            width: '100%',
+            display: 'flex',
+            flexDirection: 'column'
           }}>
             <MergeFilesButton 
               onRefresh={loadCollectionStructure} 
               onNewCollection={handleNewCollection}
+              selectedCollectionId={selectedCollectionId}
+              groups={questionGroups}
+            />
+            <TransferToExamButton 
               selectedCollectionId={selectedCollectionId}
             />
           </Box>
@@ -742,6 +1286,57 @@ const Sidebar = () => {
         onClose={handleDeleteCancel}
         onConfirm={handleDeleteConfirm}
       />
+
+      {/* Add renaming dialog */}
+      <Dialog 
+        open={Boolean(renamingGroup)} 
+        onClose={() => setRenamingGroup(null)}
+      >
+        <DialogTitle>Change Question Number</DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2 }}>
+            <TextField
+              label="Main Question Number"
+              type="number"
+              value={newQuestionNumbering.mainNumber}
+              onChange={(e) => setNewQuestionNumbering(prev => ({
+                ...prev,
+                mainNumber: parseInt(e.target.value) || 1
+              }))}
+              fullWidth
+            />
+            <TextField
+              label="Sub-Question Letter (optional)"
+              value={newQuestionNumbering.subQuestion || ''}
+              onChange={(e) => setNewQuestionNumbering(prev => ({
+                ...prev,
+                subQuestion: e.target.value.toLowerCase()
+              }))}
+              placeholder="e.g. a, b, c"
+              fullWidth
+            />
+            <TextField
+              label="Sub-Sub-Question Letter (optional)"
+              value={newQuestionNumbering.subSubQuestion || ''}
+              onChange={(e) => setNewQuestionNumbering(prev => ({
+                ...prev,
+                subSubQuestion: e.target.value.toLowerCase()
+              }))}
+              placeholder="e.g. i, ii, iii"
+              fullWidth
+            />
+            <Typography variant="body2" color="textSecondary">
+              Preview: {generateQuestionLabel(newQuestionNumbering)}
+            </Typography>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRenamingGroup(null)}>Cancel</Button>
+          <Button onClick={handleSaveGroupRename} color="primary">
+            Save
+          </Button>
+        </DialogActions>
+      </Dialog>
     </>
   );
 };

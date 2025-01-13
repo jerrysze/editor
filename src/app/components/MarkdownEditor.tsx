@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Typography, IconButton, ButtonGroup } from '@mui/material';
-import { ZoomIn, ZoomOut } from '@mui/icons-material';
+import { ZoomIn, ZoomOut, InsertPageBreak } from '@mui/icons-material';
 import MarkdownLatexEditor from 'markdown-latex';
 import MarkdownIt from 'markdown-it';
 import { PAGE_BREAK_MARKER, splitContentByPages, addPageBreakStyles } from '../utils/pageBreakUtils';
@@ -69,6 +69,24 @@ const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
     setZoom(prev => Math.max(prev - 10, 50));
   };
 
+  const handleInsertPageBreak = () => {
+    const editor = document.querySelector('.for-editor-edit textarea');
+    if (editor instanceof HTMLTextAreaElement) {
+      const start = editor.selectionStart;
+      const end = editor.selectionEnd;
+      const newContent = value.substring(0, start) + 
+        `\n${PAGE_BREAK_MARKER}\n` + 
+        value.substring(end);
+      onContentChange(newContent);
+      
+      setTimeout(() => {
+        editor.selectionStart = editor.selectionEnd = 
+          start + PAGE_BREAK_MARKER.length + 2;
+        editor.focus();
+      }, 0);
+    }
+  };
+
   const renderPreview = () => {
     const pages = splitContentByPages(value);
     
@@ -109,6 +127,32 @@ const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
           position: 'relative'
         }}
       >
+        <Box
+          sx={{
+            position: 'absolute',
+            top: '8px',
+            right: '715px',
+            zIndex: 1001,
+            display: 'flex',
+            gap: 1,
+            '& .MuiIconButton-root': {
+              padding: '4px',
+              borderRadius: '2px',
+              '&:hover': {
+                backgroundColor: '#f0f0f0',
+              }
+            }
+          }}
+        >
+          <IconButton
+            onClick={handleInsertPageBreak}
+            size="small"
+            title="Insert page break"
+          >
+            <InsertPageBreak fontSize="small" />
+          </IconButton>
+        </Box>
+
         <MarkdownLatexEditor 
           value={value} 
           onChange={onContentChange}
@@ -131,7 +175,7 @@ const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
             undo: true, 
             redo: true, 
             save: false,
-            subfield: false, 
+            subfield: false,
           }}
         />
         {showPreview && (

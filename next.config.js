@@ -11,6 +11,9 @@ const nextConfig = {
     }
     return config;
   },
+  env: {
+    HASURA_GRAPHQL_ENDPOINT: process.env.HASURA_GRAPHQL_ENDPOINT,
+  },
 };
 
 module.exports = nextConfig;

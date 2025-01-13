@@ -4,6 +4,7 @@ import { Inter } from 'next/font/google'
 import Sidebar from './components/Sidebar'
 import { Box, ThemeProvider, createTheme, CssBaseline } from '@mui/material'
 import { ActiveFileProvider } from './contexts/ActiveFileContext';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -30,6 +31,9 @@ declare module '@mui/material/styles' {
   }
 }
 
+// Create a client
+const queryClient = new QueryClient();
+
 export default function RootLayout({
   children,
 }: {
@@ -40,23 +44,25 @@ export default function RootLayout({
       <body className={inter.className}>
         <ThemeProvider theme={theme}>
           <CssBaseline />
-          <ActiveFileProvider>
-            <Box sx={{ 
-              display: 'flex', 
-              height: '100vh', 
-              overflow: 'hidden',
-              position: 'relative',
-            }}>
-              <Sidebar />
-              <Box component="main" sx={{ 
-                flexGrow: 1, 
-                overflow: 'auto',
+          <QueryClientProvider client={queryClient}>
+            <ActiveFileProvider>
+              <Box sx={{ 
+                display: 'flex', 
+                height: '100vh', 
+                overflow: 'hidden',
                 position: 'relative',
               }}>
-                {children}
+                <Sidebar />
+                <Box component="main" sx={{ 
+                  flexGrow: 1, 
+                  overflow: 'auto',
+                  position: 'relative',
+                }}>
+                  {children}
+                </Box>
               </Box>
-            </Box>
-          </ActiveFileProvider>
+            </ActiveFileProvider>
+          </QueryClientProvider>
         </ThemeProvider>
       </body>
     </html>

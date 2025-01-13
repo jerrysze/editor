@@ -368,6 +368,8 @@ export default class Editor extends Component<EditorProps, AppState> {
             showPreview={showPreview}
             isPdfLoading={isPdfLoading}
             isSelectionMode={isSelectionMode}
+            content={markdownValue}
+            format={metadata.format}
             onSave={this.handleSave}
             onShare={this.handleShare}
             onTogglePreview={this.togglePreview}

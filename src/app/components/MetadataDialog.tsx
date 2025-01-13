@@ -5,186 +5,231 @@ import {
   DialogContent,
   DialogActions,
   Button,
-  FormControl,
-  Typography,
-  Box,
   TextField,
-  ToggleButton,
-  ToggleButtonGroup,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Box,
+  Alert,
+  Grid,
+  Typography
 } from '@mui/material';
-import {
-  Code as CodeIcon,
-  Description as DescriptionIcon,
-  QuestionMark as QuestionIcon,
-  Assignment as AssignmentIcon,
-  Grading as GradingIcon,
-} from '@mui/icons-material';
+import { FileMetadata, QuestionNumbering } from '../types/metadata';
 
 interface MetadataDialogProps {
   open: boolean;
   onClose: () => void;
   onSave: (metadata: FileMetadata) => void;
-  fileName: string | null;
   initialMetadata?: FileMetadata;
+  fileName?: string;
 }
 
-export interface FileMetadata {
-  format: 'latex' | 'markdown';
-  score: number;
-  documentType: 'question' | 'answer' | 'marking_scheme';
-}
-
-const buttonGroupStyles = {
-  '& .MuiToggleButton-root': {
-    py: 0.75,
-    px: 2,
-    textTransform: 'none',
-    fontSize: '0.875rem',
-    '&.Mui-selected': {
-      backgroundColor: 'primary.main',
-      color: 'white',
-      '&:hover': {
-        backgroundColor: 'primary.dark',
-        color: 'white',
-      },
-    },
-  },
+const defaultMetadata: FileMetadata = {
+  documentType: 'question',
+  format: 'markdown',
+  score: 1,
+  questionLabel: '',
 };
 
-export default function MetadataDialog({ 
-  open, 
-  onClose, 
-  onSave, 
-  fileName,
-  initialMetadata 
-}: MetadataDialogProps) {
-  
-  const [metadata, setMetadata] = useState<FileMetadata>(initialMetadata || {
-    format: 'latex',
-    score: 0,
-    documentType: 'question'
+const MetadataDialog: React.FC<MetadataDialogProps> = ({
+  open,
+  onClose,
+  onSave,
+  initialMetadata,
+  fileName
+}) => {
+  const [metadata, setMetadata] = useState<FileMetadata>(initialMetadata || defaultMetadata);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [editorMode, setEditorMode] = useState<FileMetadata['format']>('markdown');
+  const [questionNumbering, setQuestionNumbering] = useState<QuestionNumbering>({
+    mainNumber: 1,
   });
+
+  const generateQuestionLabel = (numbering: QuestionNumbering): string => {
+    let label = `Question ${numbering.mainNumber}`;
+    if (numbering.subQuestion) {
+      label += `-${numbering.subQuestion}`;
+    }
+    if (numbering.subSubQuestion) {
+      label += `-${numbering.subSubQuestion}`;
+    }
+    return label;
+  };
 
   useEffect(() => {
     if (initialMetadata) {
       setMetadata(initialMetadata);
+      setEditorMode(initialMetadata.format || 'markdown');
+      if (initialMetadata.questionNumbering) {
+        setQuestionNumbering(initialMetadata.questionNumbering);
+      }
+    } else {
+      setMetadata(defaultMetadata);
+      setEditorMode('markdown');
     }
-  }, [initialMetadata]);
+  }, [initialMetadata, open]);
 
-  const handleSave = () => {
-    onSave(metadata);
-    onClose();
+  useEffect(() => {
+    setMetadata(prev => ({
+      ...prev,
+      questionLabel: generateQuestionLabel(questionNumbering)
+    }));
+  }, [questionNumbering]);
+
+  const validateMetadata = (): boolean => {
+    const newErrors: Record<string, string> = {};
+
+    if (!metadata.questionLabel.trim()) {
+      newErrors.questionLabel = 'Question label is required';
+    }
+    
+    // Always ensure there's a valid score
+    if (typeof metadata.score !== 'number' || metadata.score <= 0) {
+      if (metadata.documentType === 'question') {
+        newErrors.score = 'Score must be greater than 0';
+      } else {
+        // For non-question types, set a default score of 1 if invalid
+        setMetadata(prev => ({ ...prev, score: 1 }));
+      }
+    }
+    
+    if (!metadata.documentType) {
+      newErrors.documentType = 'Document type is required';
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleSave = async () => {
+    if (validateMetadata()) {
+      const finalScore = typeof metadata.score === 'number' && metadata.score > 0 
+        ? metadata.score 
+        : 1;
+
+      const updatedMetadata: FileMetadata = {
+        ...metadata,
+        score: finalScore,
+        format: editorMode,
+        questionNumbering,
+      };
+      
+      await onSave(updatedMetadata);
+      onClose();
+    }
+  };
+
+  const handleScoreChange = (value: string) => {
+    const numberValue = Number(value);
+    setMetadata(prev => ({
+      ...prev,
+      score: isNaN(numberValue) ? 1 : Math.max(1, numberValue)
+    }));
   };
 
   return (
-    <Dialog 
-      open={open} 
-      onClose={onClose} 
-      maxWidth="sm" 
-      fullWidth
-      PaperProps={{
-        sx: {
-          borderRadius: 2,
-        }
-      }}
-    >
-      <DialogTitle sx={{ 
-        borderBottom: '1px solid #e0e0e0',
-        pb: 2
-      }}>
-        Edit File Metadata
+    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+      <DialogTitle>
+        {fileName ? `Edit Metadata: ${fileName}` : 'New Question Document'}
       </DialogTitle>
-      <DialogContent sx={{ pt: 3 }}>
-        <Box sx={{ mb: 2 }}>
-          <Typography variant="subtitle2" color="textSecondary" gutterBottom>
-            File: {fileName || 'Untitled'}
-          </Typography>
-        </Box>
-
-        <Box sx={{ mb: 3 }}>
-          <FormControl fullWidth>
-            <Typography variant="subtitle2" gutterBottom>
-              Format
-            </Typography>
-            <ToggleButtonGroup
-              value={metadata.format}
-              exclusive
-              onChange={(_, value) => value && setMetadata({ 
-                ...metadata, 
-                format: value as 'latex' | 'markdown' 
-              })}
-              fullWidth
-              size="small"
-              sx={buttonGroupStyles}
-            >
-              <ToggleButton value="latex">
-                <CodeIcon sx={{ mr: 1, fontSize: '1.2rem' }} />
-                LaTeX
-              </ToggleButton>
-              <ToggleButton value="markdown">
-                <DescriptionIcon sx={{ mr: 1, fontSize: '1.2rem' }} />
-                Markdown
-              </ToggleButton>
-            </ToggleButtonGroup>
-          </FormControl>
-        </Box>
-
-        <Box sx={{ mb: 3 }}>
-          <FormControl fullWidth>
-            <Typography variant="subtitle2" gutterBottom>
-              Document Type
-            </Typography>
-            <ToggleButtonGroup
+      <DialogContent>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2 }}>
+          <FormControl fullWidth error={!!errors.documentType}>
+            <InputLabel>Document Type</InputLabel>
+            <Select
               value={metadata.documentType}
-              exclusive
-              onChange={(_, value) => value && setMetadata({
-                ...metadata,
-                documentType: value as 'question' | 'answer' | 'marking_scheme'
-              })}
-              fullWidth
-              size="small"
-              sx={buttonGroupStyles}
+              label="Document Type"
+              onChange={(e) => setMetadata(prev => ({
+                ...prev,
+                documentType: e.target.value as FileMetadata['documentType']
+              }))}
             >
-              <ToggleButton value="question">
-                <QuestionIcon sx={{ mr: 1, fontSize: '1.2rem' }} />
-                Question Paper
-              </ToggleButton>
-              <ToggleButton value="answer">
-                <AssignmentIcon sx={{ mr: 1, fontSize: '1.2rem' }} />
-                Answer
-              </ToggleButton>
-              <ToggleButton value="marking_scheme">
-                <GradingIcon sx={{ mr: 1, fontSize: '1.2rem' }} />
-                Marking Scheme
-              </ToggleButton>
-            </ToggleButtonGroup>
+              <MenuItem value="question">Question</MenuItem>
+              <MenuItem value="answer">Answer</MenuItem>
+              <MenuItem value="marking_scheme">Marking Scheme</MenuItem>
+            </Select>
           </FormControl>
-        </Box>
 
-        <Box sx={{ mb: 3 }}>
+          <Grid container spacing={2}>
+            <Grid item xs={4}>
+              <TextField
+                label="Question Number"
+                type="number"
+                value={questionNumbering.mainNumber}
+                onChange={(e) => setQuestionNumbering({
+                  ...questionNumbering,
+                  mainNumber: parseInt(e.target.value)
+                })}
+                fullWidth
+              />
+            </Grid>
+            <Grid item xs={4}>
+              <TextField
+                label="Sub-Question"
+                value={questionNumbering.subQuestion || ''}
+                onChange={(e) => setQuestionNumbering({
+                  ...questionNumbering,
+                  subQuestion: e.target.value
+                })}
+                fullWidth
+              />
+            </Grid>
+            <Grid item xs={4}>
+              <TextField
+                label="Sub-Sub-Question"
+                value={questionNumbering.subSubQuestion || ''}
+                onChange={(e) => setQuestionNumbering({
+                  ...questionNumbering,
+                  subSubQuestion: e.target.value
+                })}
+                fullWidth
+              />
+            </Grid>
+          </Grid>
+
+          <Typography variant="body2" color="textSecondary" sx={{ mt: 2, mb: 2 }}>
+            Question Label: {generateQuestionLabel(questionNumbering)}
+          </Typography>
+
           <TextField
-            fullWidth
             label="Score"
             type="number"
             value={metadata.score}
-            onChange={(e) => setMetadata({ 
-              ...metadata, 
-              score: parseInt(e.target.value) || 0 
-            })}
+            onChange={(e) => handleScoreChange(e.target.value)}
+            error={!!errors.score}
+            helperText={errors.score || (metadata.documentType !== 'question' ? 'Score will be copied from question' : '')}
+            required={metadata.documentType === 'question'}
+            disabled={metadata.documentType !== 'question'}
+            inputProps={{ min: 1 }}
           />
+
+          <FormControl fullWidth>
+            <InputLabel>Format</InputLabel>
+            <Select
+              value={editorMode}
+              label="Format"
+              onChange={(e) => {
+                const newFormat = e.target.value as 'markdown' | 'latex';
+                setEditorMode(newFormat);
+                setMetadata(prev => ({
+                  ...prev,
+                  format: newFormat
+                }));
+              }}
+            >
+              <MenuItem value="markdown">Markdown</MenuItem>
+              <MenuItem value="latex">LaTeX</MenuItem>
+            </Select>
+          </FormControl>
         </Box>
       </DialogContent>
-      <DialogActions sx={{ 
-        borderTop: '1px solid #e0e0e0',
-        p: 2
-      }}>
-        <Button onClick={onClose} variant="outlined">
-          Cancel
-        </Button>
-        <Button onClick={handleSave} variant="contained">
-          Save Changes
-        </Button>
+      <DialogActions>
+        <Button onClick={onClose}>Cancel</Button>
+        <Button onClick={handleSave} variant="contained">Save</Button>
       </DialogActions>
     </Dialog>
   );
-} 
+};
+
+export default MetadataDialog; 

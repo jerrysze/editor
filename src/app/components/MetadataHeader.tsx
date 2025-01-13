@@ -1,14 +1,17 @@
 import React from 'react';
 import { Box, Typography, Chip, Divider } from '@mui/material';
-import { FileMetadata } from './MetadataDialog';
+import { FileMetadata } from '../types/metadata';
+import PersonIcon from '@mui/icons-material/Person';
 
 interface MetadataHeaderProps {
-  metadata: FileMetadata;
+  metadata?: FileMetadata | null;
   fileName: string | null;
 }
 
 const MetadataHeader: React.FC<MetadataHeaderProps> = ({ metadata, fileName }) => {
   const getDocumentTypeColor = () => {
+    if (!metadata?.documentType) return 'default';
+    
     switch (metadata.documentType) {
       case 'question':
         return 'primary';
@@ -21,73 +24,54 @@ const MetadataHeader: React.FC<MetadataHeaderProps> = ({ metadata, fileName }) =
     }
   };
 
-  const getDocumentTypeLabel = () => {
-    switch (metadata.documentType) {
-      case 'question':
-        return 'Question Paper';
-      case 'answer':
-        return 'Answer';
-      case 'marking_scheme':
-        return 'Marking Scheme';
-      default:
-        return metadata.documentType;
-    }
-  };
+  if (!metadata) {
+    return (
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, height: '100%' }}>
+        <Typography variant="subtitle2" sx={{ fontWeight: 500, pl: 0.5 }}>
+          {fileName || 'Untitled'}
+        </Typography>
+      </Box>
+    );
+  }
 
   return (
-    <Box
-      sx={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 1.5,
-        height: '100%',
-      }}
-    >
-      <Typography 
-        variant="subtitle2" 
-        sx={{ 
-          fontWeight: 500,
-          pl: 0.5
-        }}
-      >
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, height: '100%' }}>
+      <Typography variant="subtitle2" sx={{ fontWeight: 500, pl: 0.5 }}>
         {fileName || 'Untitled'}
       </Typography>
       <Divider orientation="vertical" flexItem />
+      
+      {metadata.questionLabel && (
+        <Chip
+          label={metadata.questionLabel}
+          size="small"
+          color="info"
+          variant="outlined"
+          sx={{ height: '24px' }}
+        />
+      )}
+      
       <Chip 
-        label={metadata.format.toUpperCase()}
+        label={metadata.format?.toUpperCase() || 'UNKNOWN'}
         size="small"
         color={metadata.format === 'latex' ? 'primary' : 'secondary'}
         variant="outlined"
-        sx={{ 
-          height: '24px',
-          '& .MuiChip-label': {
-            px: 1
-          }
-        }}
+        sx={{ height: '24px' }}
       />
+      
       <Chip
-        label={getDocumentTypeLabel()}
+        label={metadata.documentType?.replace('_', ' ').toUpperCase() || 'UNKNOWN'}
         size="small"
         color={getDocumentTypeColor()}
         variant="outlined"
-        sx={{ 
-          height: '24px',
-          '& .MuiChip-label': {
-            px: 1
-          }
-        }}
+        sx={{ height: '24px' }}
       />
-      <Typography 
-        variant="caption" 
-        color="text.secondary"
-        sx={{ 
-          display: 'flex',
-          alignItems: 'center',
-          height: '24px'
-        }}
-      >
-        Score: {metadata.score}
-      </Typography>
+
+      {metadata.score !== undefined && (
+        <Typography variant="caption" color="text.secondary">
+          Score: {metadata.score}
+        </Typography>
+      )}
     </Box>
   );
 };
