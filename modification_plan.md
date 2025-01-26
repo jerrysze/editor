@@ -1,40 +1,7 @@
 # Modification Plan
 
-## Completed Modifications
-
-Implemented question-based file organization system that groups related question, answer, and marking scheme files together.
-
-Core Changes:
-- Add QuestionNumbering and QuestionGroup interfaces for metadata
-- Implement file naming convention with question numbering (X-y-Z format)
-- Add file grouping logic in Sidebar component
-- Create group-level operations (rename, delete, reorder)
-
-UI Enhancements:
-- Add collapsible question groups in sidebar
-- Implement group context menu with operations
-- Add visual indicators for different file types
-- Add question numbering dialog for group renaming
-
-File Management:
-- Implement automatic file naming based on question numbers
-- Add validation for group completeness
-- Add metadata synchronization between group files
-- Implement safe group deletion with confirmation
-
-Technical Details:
-- Update FileMetadata interface with question numbering support
-- Add helper functions for file name generation
-- Implement group sorting by question number
-- Add type safety throughout the codebase
-
-Transfer System Updates:
-  - Work with complete question groups
-  - Preserve metadata hierarchy
-  - Provide clear feedback on transfer status
-
-
-## Future Modifications
+1. Fix the pdf preview versus download rendering inconsistency
+2. Eliminate the need of a .env file.
 
 ### 1. Performance Optimization
 - [ ] Implement batch processing for large documents

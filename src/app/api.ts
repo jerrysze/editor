@@ -183,14 +183,14 @@ function flattenCollectionStructure(collections: Collection[]): any[] {
 // Modify the existing saveFile function
 export async function saveFile(collectionId: string, fileId: string | null, fileName: string, content: string) {
   try {
-    let endpoint = 'create_file';
+    let endpoint = 'create_editor_file';
     let fileExists = false;
 
     if (fileId) {
       const existingFile = await getFile(fileId);
       fileExists = !!existingFile.data.editor_files[0];
       if (fileExists) {
-        endpoint = 'update_file';
+        endpoint = 'update_editor_file';
       }
     }
 
@@ -214,7 +214,7 @@ export async function saveFile(collectionId: string, fileId: string | null, file
 // Add this new function to get file information
 export async function getFile(fileId: string) {
     try {
-        const response = await serverGetResource('get_file', JSON.stringify({ file_id: fileId }));
+        const response = await serverGetResource('get_editor_file', JSON.stringify({ file_id: fileId }));
         return response;
     } catch (error) {
         console.error("Error getting file:", error);
@@ -390,7 +390,7 @@ export async function validateCollectionMetadata(fileIds: string[]): Promise<{
     // First, get all the files with their metadata
     const filesData = await Promise.all(
       fileIds.map(async (fileId) => {
-        const response = await serverGetResource('get_file', JSON.stringify({ file_id: fileId }));
+        const response = await serverGetResource('get_editor_file', JSON.stringify({ file_id: fileId }));
         return {
           file_id: fileId,
           file_name: response.data.editor_files[0].file_name,

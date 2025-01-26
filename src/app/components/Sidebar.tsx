@@ -102,10 +102,10 @@ const generateFileName = (numbering: QuestionNumbering, type: 'question' | 'answ
 const generateQuestionLabel = (numbering: QuestionNumbering): string => {
   let label = `Question ${numbering.mainNumber}`;
   if (numbering.subQuestion) {
-    label += `${numbering.subQuestion}`;
+    label += `-${numbering.subQuestion}`;
   }
   if (numbering.subSubQuestion) {
-    label += `${numbering.subSubQuestion}`;
+    label += `-${numbering.subSubQuestion}`;
   }
   return label;
 };
@@ -114,13 +114,13 @@ const groupFilesByQuestion = (files: File[]): QuestionGroup[] => {
   const groups: { [key: string]: QuestionGroup } = {};
 
   files.forEach(file => {
-    const match = file.name.match(/Question-(\d+)(?:-([a-z]))?(?:-([a-z]))?(?:-(answer|marking))?$/i);
+    const match = file.name.match(/Question-(\d+)(?:-([a-z0-9]))?(?:-([a-z0-9]))?(?:-(answer|marking))?$/i);
     if (!match) return;
 
     const [, mainNumber, subQuestion, subSubQuestion, type] = match;
     let label = `Question ${mainNumber}`;
-    if (subQuestion) label += subQuestion.toUpperCase();
-    if (subSubQuestion) label += subSubQuestion.toUpperCase();
+    if (subQuestion) label += `-${subQuestion.toUpperCase()}`;
+    if (subSubQuestion) label += `-${subSubQuestion.toUpperCase()}`;
 
     if (!groups[label]) {
       groups[label] = {
@@ -154,15 +154,25 @@ const groupFilesByQuestion = (files: File[]): QuestionGroup[] => {
   });
 
   return Object.values(groups).sort((a, b) => {
-    const aMatch = a.label.match(/Question (\d+)([a-z])?([a-z])?/i);
-    const bMatch = b.label.match(/Question (\d+)([a-z])?([a-z])?/i);
-    if (!aMatch || !bMatch) return 0;
-    
-    const aNum = parseInt(aMatch[1]);
-    const bNum = parseInt(bMatch[1]);
-    if (aNum !== bNum) return aNum - bNum;
-    
-    return (aMatch[2] || '').localeCompare(bMatch[2] || '');
+    const aParts = a.label.replace('Question ', '').split('-');
+    const bParts = b.label.replace('Question ', '').split('-');
+
+    for (let i = 0; i < Math.max(aParts.length, bParts.length); i++) {
+      const aVal = aParts[i] || '';
+      const bVal = bParts[i] || '';
+      
+      // Compare numerically if both are numbers, otherwise lexically
+      const aNum = parseInt(aVal);
+      const bNum = parseInt(bVal);
+      
+      if (!isNaN(aNum) && !isNaN(bNum)) {
+        if (aNum !== bNum) return aNum - bNum;
+      } else {
+        const compare = aVal.localeCompare(bVal, undefined, { numeric: true });
+        if (compare !== 0) return compare;
+      }
+    }
+    return 0;
   });
 };
 
