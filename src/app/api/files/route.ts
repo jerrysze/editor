@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-const HASURA_ENDPOINT = process.env.HASURA_GRAPHQL_ENDPOINT;
+const HASURA_ENDPOINT = "http://localhost:8080/v1/graphql";
 
 export async function POST(request: Request) {
   try {
