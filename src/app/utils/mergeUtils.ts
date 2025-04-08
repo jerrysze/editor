@@ -67,6 +67,12 @@ export function validateMergeableGroups(groups: QuestionGroup[]): boolean {
     
     // Check if group has valid question numbering
     const numbering = group.metadata.questionNumbering;
+    
+    // Special case for cover page (Question 0)
+    if (numbering.mainNumber === 0) {
+      return true; // Cover page is always valid
+    }
+    
     if (!numbering.mainNumber || numbering.mainNumber < 1) {
       return false;
     }

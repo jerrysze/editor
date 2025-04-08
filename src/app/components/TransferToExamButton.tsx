@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Button, 
   Dialog,
@@ -17,8 +17,13 @@ import {
   ListItem,
   ListItemText,
   Checkbox,
-  Snackbar
+  Snackbar,
+  FormControlLabel,
+  IconButton,
+  Collapse
 } from '@mui/material';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getExams, transferCollectionToExam, validateCollectionMetadata, getFile } from '../api';
 import { FileMetadata } from '../types/metadata';
@@ -62,6 +67,8 @@ export const TransferToExamButton: React.FC<TransferToExamButtonProps> = ({ sele
   const [open, setOpen] = useState(false);
   const [selectedExam, setSelectedExam] = useState<number | ''>('');
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
+  const [selectAllChecked, setSelectAllChecked] = useState(false);
+  const [expandedQuestions, setExpandedQuestions] = useState<Record<number, boolean>>({});
   const [snackbar, setSnackbar] = useState<{
     open: boolean;
     message: string;
@@ -269,6 +276,114 @@ export const TransferToExamButton: React.FC<TransferToExamButtonProps> = ({ sele
     return !!(group.files.question && group.files.markingScheme); // Only require question and marking scheme
   };
 
+  // Group questions by their main number
+  const groupedQuestions = React.useMemo(() => {
+    if (!files) return {};
+    
+    const result: Record<number, QuestionGroup[]> = {};
+    
+    files.forEach(group => {
+      const mainNumber = group.metadata.questionNumbering?.mainNumber || 0;
+      if (!result[mainNumber]) {
+        result[mainNumber] = [];
+      }
+      result[mainNumber].push(group);
+    });
+    
+    // Sort each group internally by sub-question
+    Object.keys(result).forEach(key => {
+      const numKey = parseInt(key);
+      result[numKey].sort((a, b) => {
+        const subA = a.metadata.questionNumbering?.subQuestion || '';
+        const subB = b.metadata.questionNumbering?.subQuestion || '';
+        return subA.localeCompare(subB);
+      });
+    });
+    
+    return result;
+  }, [files]);
+
+  // Check if a main question has all its sub-questions selected
+  const isMainQuestionFullySelected = (mainNumber: number): boolean => {
+    const mainQuestionGroups = groupedQuestions[mainNumber] || [];
+    return mainQuestionGroups.length > 0 && 
+           mainQuestionGroups.every(group => 
+             selectedFiles.includes(group.label)
+           );
+  };
+
+  // Check if a main question has any of its sub-questions selected
+  const isMainQuestionPartiallySelected = (mainNumber: number): boolean => {
+    const mainQuestionGroups = groupedQuestions[mainNumber] || [];
+    return mainQuestionGroups.some(group => 
+      selectedFiles.includes(group.label)
+    ) && !isMainQuestionFullySelected(mainNumber);
+  };
+
+  // Toggle expansion state for a question group
+  const toggleExpanded = (mainNumber: number, event: React.MouseEvent) => {
+    event.stopPropagation();
+    setExpandedQuestions(prev => ({
+      ...prev,
+      [mainNumber]: !prev[mainNumber]
+    }));
+  };
+
+  // Handle toggling a main question and all its sub-questions
+  const handleToggleMainQuestion = (mainNumber: number) => {
+    const mainQuestionGroups = groupedQuestions[mainNumber] || [];
+    const groupLabels = mainQuestionGroups.map(g => g.label);
+    
+    if (isMainQuestionFullySelected(mainNumber)) {
+      // Deselect all in this group
+      setSelectedFiles(prev => 
+        prev.filter(label => !groupLabels.includes(label))
+      );
+    } else {
+      // Select all in this group
+      const newSelectedFiles = [...selectedFiles];
+      
+      groupLabels.forEach(label => {
+        if (!newSelectedFiles.includes(label)) {
+          newSelectedFiles.push(label);
+        }
+      });
+      
+      setSelectedFiles(newSelectedFiles);
+    }
+  };
+
+  // Handle select all functionality - selects all questions including sub-questions
+  const handleSelectAll = () => {
+    if (selectAllChecked) {
+      // Deselect all
+      setSelectedFiles([]);
+    } else {
+      // Select all questions including sub-questions
+      if (!files) return;
+      
+      const allQuestionLabels = files.map(group => group.label);
+      setSelectedFiles(allQuestionLabels);
+    }
+  };
+
+  // Update select all state when selection changes
+  useEffect(() => {
+    if (!files || files.length === 0) {
+      setSelectAllChecked(false);
+      return;
+    }
+    
+    const allComplete = files.filter(isGroupComplete);
+    const allCompleteLabels = allComplete.map(group => group.label);
+    
+    // Check if all valid files are selected
+    setSelectAllChecked(
+      allCompleteLabels.length > 0 && 
+      allCompleteLabels.every(label => selectedFiles.includes(label))
+    );
+  }, [selectedFiles, files]);
+
   return (
     <>
       <Button
@@ -278,7 +393,7 @@ export const TransferToExamButton: React.FC<TransferToExamButtonProps> = ({ sele
         disabled={!selectedCollectionId}
         onClick={() => setOpen(true)}
       >
-        Transfer to Exam
+        Transfer to MAGE
       </Button>
 
       <Dialog 
@@ -291,7 +406,7 @@ export const TransferToExamButton: React.FC<TransferToExamButtonProps> = ({ sele
         maxWidth="sm"
         fullWidth
       >
-        <DialogTitle>Transfer to Exam</DialogTitle>
+        <DialogTitle>Transfer to MAGE</DialogTitle>
         <DialogContent>
           {filesError && (
             <Alert severity="error" sx={{ mb: 2 }}>
@@ -300,9 +415,24 @@ export const TransferToExamButton: React.FC<TransferToExamButtonProps> = ({ sele
           )}
           
           <Box sx={{ mb: 3 }}>
-            <Typography variant="subtitle1" gutterBottom>
-              1. Select Questions to Transfer
-            </Typography>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+              <Typography variant="subtitle1">
+                1. Select Questions to Transfer
+              </Typography>
+              {files && files.length > 0 && !filesLoading && (
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={selectAllChecked}
+                      onChange={handleSelectAll}
+                      disabled={!files.some(isGroupComplete)}
+                    />
+                  }
+                  label="Select All"
+                />
+              )}
+            </Box>
+            
             {filesLoading ? (
               <CircularProgress size={24} sx={{ m: 2 }} />
             ) : !files?.length ? (
@@ -311,41 +441,110 @@ export const TransferToExamButton: React.FC<TransferToExamButtonProps> = ({ sele
               </Typography>
             ) : (
               <List>
-                {files.map((group: QuestionGroup) => (
-                  <ListItem 
-                    key={group.label}
-                    sx={{ cursor: 'pointer' }}
-                    secondaryAction={
-                      <Checkbox 
-                        edge="end"
-                        checked={selectedFiles.includes(group.label)}
-                        onChange={() => handleFileToggle(group.label)}
-                        onClick={(e) => e.stopPropagation()}
-                        disabled={!isGroupComplete(group)}
-                      />
-                    }
-                  >
-                    <ListItemText 
-                      primary={group.label}
-                      secondary={
-                        <>
-                          Score: {group.metadata.score} | Files: {Object.values(group.files).filter(Boolean).length}/3
-                          {!group.files.question && (
-                            <Typography component="span" color="error" sx={{ ml: 1 }}>
-                              (Question required)
-                            </Typography>
+                {Object.keys(groupedQuestions)
+                  .map(key => parseInt(key))
+                  .sort((a, b) => a - b)
+                  .map(mainNumber => {
+                    const mainQuestionGroups = groupedQuestions[mainNumber];
+                    const hasSubQuestions = mainQuestionGroups.some(
+                      g => !!g.metadata.questionNumbering?.subQuestion
+                    );
+                    
+                    // Find a group that has no sub-question to represent the main question
+                    const mainGroup = mainQuestionGroups.find(g => !g.metadata.questionNumbering?.subQuestion) 
+                      || mainQuestionGroups[0]; // fallback to first in group
+                    
+                    // Get the main question label (without sub-question part)
+                    const mainLabel = `Question ${mainNumber}`;
+                    
+                    return (
+                      <Box key={mainNumber}>
+                        <ListItem 
+                          sx={{ 
+                            bgcolor: 'rgba(0, 0, 0, 0.03)', 
+                            cursor: 'pointer',
+                            borderRadius: 1
+                          }}
+                          onClick={() => handleToggleMainQuestion(mainNumber)}
+                        >
+                          <ListItemText 
+                            primary={mainLabel}
+                            secondary={
+                              <>
+                                Score: {mainGroup.metadata.score}
+                                {!isGroupComplete(mainGroup) && (
+                                  <Typography component="span" color="error" sx={{ ml: 1 }}>
+                                    (Missing required files)
+                                  </Typography>
+                                )}
+                              </>
+                            }
+                          />
+                          {hasSubQuestions && (
+                            <IconButton 
+                              edge="end" 
+                              onClick={(e) => toggleExpanded(mainNumber, e)}
+                              aria-expanded={expandedQuestions[mainNumber]}
+                              aria-label="show more"
+                            >
+                              {expandedQuestions[mainNumber] ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                            </IconButton>
                           )}
-                          {!group.files.markingScheme && (
-                            <Typography component="span" color="error" sx={{ ml: 1 }}>
-                              (Marking scheme required)
-                            </Typography>
-                          )}
-                        </>
-                      }
-                      onClick={() => handleFileToggle(group.label)}
-                    />
-                  </ListItem>
-                ))}
+                          <Checkbox
+                            edge="end"
+                            checked={isMainQuestionFullySelected(mainNumber)}
+                            indeterminate={isMainQuestionPartiallySelected(mainNumber)}
+                            onChange={() => handleToggleMainQuestion(mainNumber)}
+                            onClick={(e) => e.stopPropagation()}
+                            disabled={!mainQuestionGroups.some(isGroupComplete)}
+                          />
+                        </ListItem>
+                        
+                        {hasSubQuestions && (
+                          <Collapse in={expandedQuestions[mainNumber]} timeout="auto" unmountOnExit>
+                            <List component="div" disablePadding>
+                              {mainQuestionGroups
+                                .filter(group => !!group.metadata.questionNumbering?.subQuestion)
+                                .map((group) => (
+                                  <ListItem 
+                                    key={group.label}
+                                    onClick={() => handleFileToggle(group.label)}
+                                    sx={{ pl: 4, cursor: 'pointer' }}
+                                  >
+                                    <ListItemText 
+                                      primary={group.metadata.questionLabel}
+                                      secondary={
+                                        <>
+                                          Score: {group.metadata.score} | Files: {Object.values(group.files).filter(Boolean).length}/3
+                                          {!group.files.question && (
+                                            <Typography component="span" color="error" sx={{ ml: 1 }}>
+                                              (Question required)
+                                            </Typography>
+                                          )}
+                                          {!group.files.markingScheme && (
+                                            <Typography component="span" color="error" sx={{ ml: 1 }}>
+                                              (Marking scheme required)
+                                            </Typography>
+                                          )}
+                                        </>
+                                      }
+                                    />
+                                    <Checkbox
+                                      edge="end"
+                                      checked={selectedFiles.includes(group.label)}
+                                      onChange={() => handleFileToggle(group.label)}
+                                      onClick={(e) => e.stopPropagation()}
+                                      disabled={!isGroupComplete(group)}
+                                    />
+                                  </ListItem>
+                                ))}
+                            </List>
+                          </Collapse>
+                        )}
+                      </Box>
+                    );
+                  })
+                }
               </List>
             )}
           </Box>

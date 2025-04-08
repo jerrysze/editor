@@ -187,6 +187,7 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
         </Tooltip>
 
         {/* Insert file - Content manipulation */}
+        {/* 
         <Tooltip title={isSelectionMode ? "Cancel Insert" : "Insert File Content"}>
           <IconButton 
             onClick={onInsertClick}
@@ -199,6 +200,7 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
             <InsertDriveFileIcon fontSize="small" />
           </IconButton>
         </Tooltip>
+        */}
 
         {/* Metadata editing */}
         <Tooltip title="Edit Metadata">

@@ -1,0 +1,3 @@
+table:
+  name: oid_mapping
+  schema: public

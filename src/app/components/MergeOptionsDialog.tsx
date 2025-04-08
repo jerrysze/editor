@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -14,8 +14,14 @@ import {
   Typography,
   Box,
   Alert,
-  CircularProgress
+  CircularProgress,
+  IconButton,
+  Collapse,
+  ListItemIcon,
+  FormGroup
 } from '@mui/material';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import { QuestionGroup } from '../types/metadata';
 import { validateMergeableGroups } from '../utils/mergeUtils';
 import { getFile } from '../api';
@@ -46,7 +52,83 @@ const MergeOptionsDialog: React.FC<MergeOptionsDialogProps> = ({
   const [selectedTypes, setSelectedTypes] = useState<DocumentType[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [expandedQuestions, setExpandedQuestions] = useState<Record<number, boolean>>({});
+  const [selectAllChecked, setSelectAllChecked] = useState(false);
 
+  // Group questions by their main number
+  const groupedQuestions = React.useMemo(() => {
+    const result: Record<number, QuestionGroup[]> = {};
+    
+    groups.forEach(group => {
+      const mainNumber = group.metadata.questionNumbering?.mainNumber || 0;
+      if (!result[mainNumber]) {
+        result[mainNumber] = [];
+      }
+      result[mainNumber].push(group);
+    });
+    
+    // Sort each group internally by sub-question
+    Object.keys(result).forEach(key => {
+      const numKey = parseInt(key);
+      result[numKey].sort((a, b) => {
+        const subA = a.metadata.questionNumbering?.subQuestion || '';
+        const subB = b.metadata.questionNumbering?.subQuestion || '';
+        return subA.localeCompare(subB);
+      });
+    });
+    
+    return result;
+  }, [groups]);
+
+  // Check if a main question has all its sub-questions selected
+  const isMainQuestionFullySelected = (mainNumber: number): boolean => {
+    const mainQuestionGroups = groupedQuestions[mainNumber] || [];
+    return mainQuestionGroups.length > 0 && 
+           mainQuestionGroups.every(group => 
+             selectedGroups.some(g => g.label === group.label)
+           );
+  };
+
+  // Check if a main question has any of its sub-questions selected
+  const isMainQuestionPartiallySelected = (mainNumber: number): boolean => {
+    const mainQuestionGroups = groupedQuestions[mainNumber] || [];
+    return mainQuestionGroups.some(group => 
+      selectedGroups.some(g => g.label === group.label)
+    ) && !isMainQuestionFullySelected(mainNumber);
+  };
+
+  // Toggle expansion state for a question group
+  const toggleExpanded = (mainNumber: number) => {
+    setExpandedQuestions(prev => ({
+      ...prev,
+      [mainNumber]: !prev[mainNumber]
+    }));
+  };
+
+  // Handle toggling a main question and all its sub-questions
+  const handleToggleMainQuestion = (mainNumber: number) => {
+    const mainQuestionGroups = groupedQuestions[mainNumber] || [];
+    
+    if (isMainQuestionFullySelected(mainNumber)) {
+      // Deselect all in this group
+      setSelectedGroups(prev => 
+        prev.filter(g => !mainQuestionGroups.some(mg => mg.label === g.label))
+      );
+    } else {
+      // Select all in this group
+      const newSelectedGroups = [...selectedGroups];
+      
+      mainQuestionGroups.forEach(group => {
+        if (!newSelectedGroups.some(g => g.label === group.label)) {
+          newSelectedGroups.push(group);
+        }
+      });
+      
+      setSelectedGroups(newSelectedGroups);
+    }
+  };
+
+  // Toggle a single group
   const handleToggleGroup = (group: QuestionGroup) => {
     setSelectedGroups(prev => {
       const exists = prev.find(g => g.label === group.label);
@@ -56,6 +138,51 @@ const MergeOptionsDialog: React.FC<MergeOptionsDialogProps> = ({
       return [...prev, group];
     });
   };
+
+  // Handle select all functionality
+  const handleSelectAll = () => {
+    if (selectAllChecked) {
+      // Deselect all
+      setSelectedGroups([]);
+    } else {
+      // Select all main questions
+      const allMainQuestions: QuestionGroup[] = [];
+      Object.keys(groupedQuestions).forEach(mainNumber => {
+        const mainGroups = groupedQuestions[parseInt(mainNumber)];
+        // For each main question, only add groups that have no sub-question
+        // or just the first sub-question if all have sub-questions
+        const noSubQuestions = mainGroups.filter(g => !g.metadata.questionNumbering?.subQuestion);
+        
+        if (noSubQuestions.length > 0) {
+          allMainQuestions.push(...noSubQuestions);
+        } else {
+          // If all have sub-questions, just select the first one
+          allMainQuestions.push(mainGroups[0]);
+        }
+      });
+      setSelectedGroups(allMainQuestions);
+    }
+  };
+
+  // Update select all state when selection changes
+  useEffect(() => {
+    // Check if all main questions are selected
+    const allMainQuestionsSelected = Object.keys(groupedQuestions).every(mainNumber => {
+      const mainGroups = groupedQuestions[parseInt(mainNumber)];
+      const noSubQuestions = mainGroups.filter(g => !g.metadata.questionNumbering?.subQuestion);
+      
+      if (noSubQuestions.length > 0) {
+        return noSubQuestions.every(group => 
+          selectedGroups.some(g => g.label === group.label)
+        );
+      } else {
+        // If all have sub-questions, check if at least the first one is selected
+        return selectedGroups.some(g => g.label === mainGroups[0].label);
+      }
+    });
+    
+    setSelectAllChecked(allMainQuestionsSelected && Object.keys(groupedQuestions).length > 0);
+  }, [selectedGroups, groupedQuestions]);
 
   const handleToggleType = (type: DocumentType) => {
     setSelectedTypes(prev => {
@@ -271,24 +398,91 @@ const MergeOptionsDialog: React.FC<MergeOptionsDialogProps> = ({
           </FormControl>
         </Box>
 
-        <Typography variant="subtitle1" gutterBottom>Select Question Groups</Typography>
-        <List>
-          {groups.map((group) => (
-            <ListItem 
-              key={group.label}
-              onClick={() => handleToggleGroup(group)}
-              sx={{ cursor: 'pointer' }}
-            >
-              <ListItemText 
-                primary={group.metadata.questionLabel}
-                secondary={`Question ${group.metadata.questionNumbering?.mainNumber || ''}`}
-              />
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+          <Typography variant="subtitle1">Select Question Groups</Typography>
+          <FormControlLabel
+            control={
               <Checkbox
-                edge="end"
-                checked={selectedGroups.some(g => g.label === group.label)}
+                checked={selectAllChecked}
+                onChange={handleSelectAll}
+                disabled={Object.keys(groupedQuestions).length === 0}
               />
-            </ListItem>
-          ))}
+            }
+            label="Select All"
+          />
+        </Box>
+
+        <List>
+          {Object.keys(groupedQuestions)
+            .map(key => parseInt(key))
+            .sort((a, b) => a - b)
+            .map(mainNumber => {
+              const mainQuestionGroups = groupedQuestions[mainNumber];
+              const hasSubQuestions = mainQuestionGroups.some(
+                g => !!g.metadata.questionNumbering?.subQuestion
+              );
+              
+              // Get the main question label (without sub-question part)
+              const mainLabel = `Question ${mainNumber}`;
+              
+              return (
+                <Box key={mainNumber}>
+                  <ListItem 
+                    sx={{ 
+                      bgcolor: 'rgba(0, 0, 0, 0.03)', 
+                      cursor: 'pointer',
+                      borderRadius: 1
+                    }}
+                  >
+                    <ListItemText 
+                      primary={mainLabel}
+                    />
+                    {hasSubQuestions && (
+                      <IconButton 
+                        edge="end" 
+                        onClick={() => toggleExpanded(mainNumber)}
+                        aria-expanded={expandedQuestions[mainNumber]}
+                        aria-label="show more"
+                      >
+                        {expandedQuestions[mainNumber] ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                      </IconButton>
+                    )}
+                    <Checkbox
+                      edge="end"
+                      checked={isMainQuestionFullySelected(mainNumber)}
+                      indeterminate={isMainQuestionPartiallySelected(mainNumber)}
+                      onChange={() => handleToggleMainQuestion(mainNumber)}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  </ListItem>
+                  
+                  {hasSubQuestions && (
+                    <Collapse in={expandedQuestions[mainNumber]} timeout="auto" unmountOnExit>
+                      <List component="div" disablePadding>
+                        {mainQuestionGroups
+                          .filter(group => !!group.metadata.questionNumbering?.subQuestion)
+                          .map((group) => (
+                            <ListItem 
+                              key={group.label}
+                              onClick={() => handleToggleGroup(group)}
+                              sx={{ pl: 4, cursor: 'pointer' }}
+                            >
+                              <ListItemText 
+                                primary={group.metadata.questionLabel}
+                                secondary={`Sub-question ${group.metadata.questionNumbering?.subQuestion || ''}`}
+                              />
+                              <Checkbox
+                                edge="end"
+                                checked={selectedGroups.some(g => g.label === group.label)}
+                              />
+                            </ListItem>
+                          ))}
+                      </List>
+                    </Collapse>
+                  )}
+                </Box>
+              );
+            })}
         </List>
 
         {error && (

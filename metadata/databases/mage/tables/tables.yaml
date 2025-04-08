@@ -7,6 +7,7 @@
 - "!include public_exams.yaml"
 - "!include public_files.yaml"
 - "!include public_job_status.yaml"
+- "!include public_oid_mapping.yaml"
 - "!include public_question_information.yaml"
 - "!include public_question_submissions.yaml"
 - "!include public_semesters.yaml"

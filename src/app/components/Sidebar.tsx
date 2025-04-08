@@ -247,11 +247,39 @@ const Sidebar = () => {
   }, [searchTerm, collections]);
 
   const filterCollections = (cols: Collection[], term: string): Collection[] => {
+    const lowerTerm = term.toLowerCase().trim();
+    
     return cols.reduce((acc: Collection[], col) => {
-      const matchingFiles = col.files.filter(file => file.name.toLowerCase().includes(term.toLowerCase()));
+      // Check if collection name matches
+      const nameMatches = col.name.toLowerCase().includes(lowerTerm);
+      
+      // Check if files match (normalize file names)
+      const matchingFiles = col.files.filter(file => {
+        const fileName = file.name.toLowerCase();
+        
+        // Standard includes check
+        if (fileName.includes(lowerTerm)) return true;
+        
+        // Check for number-only searches (like "1" matching "Question-1")
+        if (/^\d+$/.test(lowerTerm)) {
+          const numberMatch = fileName.match(/question-(\d+)/i);
+          if (numberMatch && numberMatch[1] === lowerTerm) return true;
+        }
+        
+        // Check for "question X" format
+        if (lowerTerm.startsWith('question') && 
+            fileName.includes(lowerTerm.replace(/question\s+/i, 'question-'))) {
+          return true;
+        }
+        
+        return false;
+      });
+      
+      // Recursively filter subcollections
       const matchingCollections = filterCollections(col.collections, term);
       
-      if (col.name.toLowerCase().includes(term.toLowerCase()) || matchingFiles.length > 0 || matchingCollections.length > 0) {
+      // Include this collection if it or any of its contents match
+      if (nameMatches || matchingFiles.length > 0 || matchingCollections.length > 0) {
         acc.push({
           ...col,
           files: matchingFiles,
@@ -628,11 +656,6 @@ const Sidebar = () => {
     setTemplates(prevTemplates => prevTemplates.filter(template => template.id !== id));
   };
 
-  const handleInvitePeople = () => {
-    console.log("Invite people clicked");
-    // Implement the invite functionality here
-  };
-
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (sidebarRef.current && !sidebarRef.current.contains(event.target as Node)) {
@@ -746,14 +769,15 @@ const Sidebar = () => {
       
       // Create files with the generated names
       for (const fileName of files) {
-        const documentType = fileName.endsWith('-answer') 
-          ? 'answer' 
+        // Explicitly type documentType as the correct union type
+        const documentType: 'question' | 'answer' | 'marking_scheme' = fileName.endsWith('-answer') 
+          ? 'answer'
           : fileName.endsWith('-marking') 
-            ? 'marking_scheme' 
+            ? 'marking_scheme'
             : 'question';
 
         // Update the metadata with the proper question label format
-        const fileMetadata = {
+        const fileMetadata: FileMetadata = {
           ...metadata,
           documentType,
           questionLabel: generateQuestionLabel(metadata.questionNumbering || { mainNumber: 1 })
@@ -907,6 +931,54 @@ const Sidebar = () => {
       ))
     : [];
 
+  // Filter question groups based on search term
+  const filteredQuestionGroups = React.useMemo(() => {
+    if (!searchTerm || !questionGroups.length) return questionGroups;
+    
+    const lowerSearchTerm = searchTerm.toLowerCase().trim();
+    
+    return questionGroups.filter(group => {
+      // Check if question label matches search
+      // Strip out any formatting and check both with and without "Question" prefix
+      const normalizedLabel = group.label.toLowerCase();
+      const numberOnly = normalizedLabel.replace(/question\s+/i, '');
+      
+      if (normalizedLabel.includes(lowerSearchTerm)) {
+        return true;
+      }
+      
+      // Check if searching for just a number (e.g., "1") and it matches
+      if (/^\d+$/.test(lowerSearchTerm) && numberOnly.startsWith(lowerSearchTerm)) {
+        return true;
+      }
+      
+      // Check for "question X" format
+      if (lowerSearchTerm.startsWith('question') && 
+          normalizedLabel.includes(lowerSearchTerm.replace(/question\s+/i, 'question '))) {
+
+        return true;
+      }
+      
+      // Check if any of the files in the group match search
+      const fileNames = [
+        group.files.question ? generateFileName(group.metadata.questionNumbering || { mainNumber: 1 }, 'question') : '',
+        group.files.answer ? generateFileName(group.metadata.questionNumbering || { mainNumber: 1 }, 'answer') : '',
+        group.files.markingScheme ? generateFileName(group.metadata.questionNumbering || { mainNumber: 1 }, 'marking_scheme') : ''
+      ];
+      
+      const fileMatch = fileNames.some(name => name.toLowerCase().includes(lowerSearchTerm));
+      return fileMatch;
+    });
+  }, [searchTerm, questionGroups]);
+  
+  // Expand all groups when searching
+  useEffect(() => {
+    if (searchTerm) {
+      // Expand all groups when searching
+      setCollapsedGroups(new Set());
+    }
+  }, [searchTerm]);
+
   return (
     <>
       <Drawer
@@ -995,7 +1067,7 @@ const Sidebar = () => {
             
             {selectedCollectionId && (
               <>
-                {groupFilesByQuestion(collections.find(c => c.id === selectedCollectionId)?.files || []).map((group) => (
+                {filteredQuestionGroups.map((group) => (
                   <Box 
                     key={group.label} 
                     sx={{ 
