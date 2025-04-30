@@ -353,16 +353,18 @@ export const TransferToExamButton: React.FC<TransferToExamButtonProps> = ({ sele
     }
   };
 
-  // Handle select all functionality - selects all questions including sub-questions
+  // Handle select all functionality - selects all questions including sub-questions, but exclude Question 0 (cover page)
   const handleSelectAll = () => {
     if (selectAllChecked) {
       // Deselect all
       setSelectedFiles([]);
     } else {
-      // Select all questions including sub-questions
+      // Select all questions including sub-questions, but exclude Question 0 (cover page)
       if (!files) return;
       
-      const allQuestionLabels = files.map(group => group.label);
+      const allQuestionLabels = files
+        .filter(group => (group.metadata.questionNumbering?.mainNumber || 0) > 0) // Exclude Question 0
+        .map(group => group.label);
       setSelectedFiles(allQuestionLabels);
     }
   };
@@ -374,7 +376,10 @@ export const TransferToExamButton: React.FC<TransferToExamButtonProps> = ({ sele
       return;
     }
     
-    const allComplete = files.filter(isGroupComplete);
+    // Filter out Question 0 and include only complete question groups
+    const allComplete = files
+      .filter(group => (group.metadata.questionNumbering?.mainNumber || 0) > 0) // Exclude Question 0
+      .filter(isGroupComplete);
     const allCompleteLabels = allComplete.map(group => group.label);
     
     // Check if all valid files are selected
