@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -35,6 +35,9 @@ const md = new MarkdownIt({
   breaks: true
 });
 
+// Add a cache for PDF generations to avoid redundant conversions
+const pdfCache = new Map<string, Uint8Array>();
+
 type DocumentType = 'question' | 'answer' | 'marking_scheme';
 
 interface MergeOptionsDialogProps {
@@ -54,6 +57,26 @@ const MergeOptionsDialog: React.FC<MergeOptionsDialogProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [expandedQuestions, setExpandedQuestions] = useState<Record<number, boolean>>({});
   const [selectAllChecked, setSelectAllChecked] = useState(false);
+  const [processingProgress, setProcessingProgress] = useState(0);
+  const mdRenderContainerRef = useRef<HTMLDivElement | null>(null);
+
+  // Create container for markdown rendering on component mount
+  useEffect(() => {
+    const container = document.createElement('div');
+    container.className = 'pdf-export-container';
+    container.style.position = 'absolute';
+    container.style.left = '-9999px';
+    container.style.width = '210mm';
+    document.body.appendChild(container);
+    mdRenderContainerRef.current = container;
+
+    // Cleanup on unmount
+    return () => {
+      if (container && document.body.contains(container)) {
+        document.body.removeChild(container);
+      }
+    };
+  }, []);
 
   // Group questions by their main number
   const groupedQuestions = React.useMemo(() => {
@@ -225,7 +248,13 @@ const MergeOptionsDialog: React.FC<MergeOptionsDialogProps> = ({
     return true;
   };
 
-  const generatePDFFromLatex = async (content: string): Promise<Uint8Array> => {
+  // Optimized PDF generation from LaTeX - caches results
+  const generatePDFFromLatex = async (content: string, cacheKey: string): Promise<Uint8Array> => {
+    // Check if we have this PDF in cache
+    if (pdfCache.has(cacheKey)) {
+      return pdfCache.get(cacheKey)!;
+    }
+
     try {
       const response = await fetch('/api/latex', {
         method: 'POST',
@@ -239,37 +268,45 @@ const MergeOptionsDialog: React.FC<MergeOptionsDialogProps> = ({
         throw new Error('LaTeX compilation failed');
       }
 
-      return new Uint8Array(await response.arrayBuffer());
+      const pdfBytes = new Uint8Array(await response.arrayBuffer());
+      
+      // Cache the result
+      pdfCache.set(cacheKey, pdfBytes);
+      
+      return pdfBytes;
     } catch (error) {
       console.error('Error generating PDF from LaTeX:', error);
       throw error;
     }
   };
 
-  const generatePDFFromMarkdown = async (content: string): Promise<Uint8Array> => {
+  // Optimized PDF generation from Markdown - caches results and reuses DOM elements
+  const generatePDFFromMarkdown = async (content: string, cacheKey: string): Promise<Uint8Array> => {
+    // Check if we have this PDF in cache
+    if (pdfCache.has(cacheKey)) {
+      return pdfCache.get(cacheKey)!;
+    }
+
     try {
-      const tempDiv = document.createElement('div');
-      tempDiv.className = 'pdf-export-container';
+      // Reuse the render container for better performance
+      const tempDiv = mdRenderContainerRef.current!;
       tempDiv.innerHTML = md.render(content);
-      tempDiv.style.position = 'absolute';
-      tempDiv.style.left = '-9999px';
-      tempDiv.style.width = '210mm';
-      document.body.appendChild(tempDiv);
 
       const canvas = await html2canvas(tempDiv, {
-        scale: 2,
+        scale: 1.5, // Lower scale for better performance (still good quality)
         useCORS: true,
         logging: false,
         windowWidth: tempDiv.scrollWidth,
         windowHeight: tempDiv.scrollHeight
       });
 
-      document.body.removeChild(tempDiv);
+      tempDiv.innerHTML = ''; // Clear for next use
 
       const pdf = new jsPDF({
         orientation: 'portrait',
         unit: 'mm',
-        format: 'a4'
+        format: 'a4',
+        compress: true // Enable compression for smaller file size
       });
 
       const imgWidth = 210;
@@ -277,7 +314,12 @@ const MergeOptionsDialog: React.FC<MergeOptionsDialogProps> = ({
       
       pdf.addImage(canvas, 'JPEG', 0, 0, imgWidth, imgHeight, '', 'FAST');
 
-      return new Uint8Array(pdf.output('arraybuffer'));
+      const pdfBytes = new Uint8Array(pdf.output('arraybuffer'));
+      
+      // Cache the result
+      pdfCache.set(cacheKey, pdfBytes);
+      
+      return pdfBytes;
     } catch (error) {
       console.error('Error generating PDF from Markdown:', error);
       throw error;
@@ -289,6 +331,7 @@ const MergeOptionsDialog: React.FC<MergeOptionsDialogProps> = ({
     
     setIsProcessing(true);
     setError(null);
+    setProcessingProgress(0);
 
     try {
       const mergedPdf = await PDFDocument.create();
@@ -300,40 +343,102 @@ const MergeOptionsDialog: React.FC<MergeOptionsDialogProps> = ({
         return numA - numB;
       });
 
-      // Process each group in order: question -> answer -> marking scheme
-      for (const group of sortedGroups) {
-        // Fixed order of document types
-        const orderedTypes: DocumentType[] = ['question', 'answer', 'marking_scheme'];
-        
-        // Only process selected types, but maintain order
-        const typesToProcess = orderedTypes.filter(type => selectedTypes.includes(type));
+      // Determine total operations for progress calculation
+      const totalOperations = sortedGroups.length * selectedTypes.length;
+      let completedOperations = 0;
 
-        for (const type of typesToProcess) {
+      // Pre-fetch all file data in parallel
+      const fileDataMap = new Map();
+      const fetchPromises = [];
+
+      for (const group of sortedGroups) {
+        for (const type of selectedTypes) {
           const fileKey = type === 'marking_scheme' ? 'markingScheme' : type;
           const fileId = group.files[fileKey];
           
           if (!fileId) continue;
 
-          // Get file content and format
-          const fileResponse = await getFile(fileId);
-          const fileData = fileResponse.data.editor_files[0];
-          const content = fileData.content;
-          const format = fileData.metadata.format;
+          // Skip if we already have a fetch pending for this file
+          if (fileDataMap.has(fileId)) continue;
 
-          try {
-            // Generate PDF based on format
-            const pdfBytes = format === 'latex' 
-              ? await generatePDFFromLatex(content)
-              : await generatePDFFromMarkdown(content);
+          const fetchPromise = getFile(fileId).then(fileResponse => {
+            if (fileResponse && fileResponse.data && fileResponse.data.editor_files && fileResponse.data.editor_files[0]) {
+              fileDataMap.set(fileId, fileResponse.data.editor_files[0]);
+            }
+          });
+          fetchPromises.push(fetchPromise);
+        }
+      }
 
-            // Load and merge the PDF
-            const pdf = await PDFDocument.load(pdfBytes);
-            const pages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
-            pages.forEach(page => mergedPdf.addPage(page));
-          } catch (error) {
-            console.error(`Error processing ${type} for question ${group.metadata.questionLabel}:`, error);
-            throw new Error(`Failed to process ${type} for question ${group.metadata.questionLabel}`);
-          }
+      // Wait for all file data to be fetched
+      await Promise.all(fetchPromises);
+
+      // Process documents in batches to avoid UI freezing
+      const batchSize = 4; // Process 4 documents at a time
+      
+      // Fixed order of document types
+      const orderedTypes: DocumentType[] = ['question', 'answer', 'marking_scheme'];
+      // Only process selected types, but maintain order
+      const typesToProcess = orderedTypes.filter(type => selectedTypes.includes(type));
+
+      for (let i = 0; i < sortedGroups.length; i += batchSize) {
+        const batchGroups = sortedGroups.slice(i, i + batchSize);
+        
+        // Process each batch in parallel
+        const batchPromises = batchGroups.flatMap(group => {
+          return typesToProcess.map(async type => {
+            const fileKey = type === 'marking_scheme' ? 'markingScheme' : type;
+            const fileId = group.files[fileKey];
+            
+            if (!fileId) {
+              completedOperations++;
+              setProcessingProgress(Math.round((completedOperations / totalOperations) * 100));
+              return null;
+            }
+
+            try {
+              // Get file content and format from our pre-fetched map
+              const fileData = fileDataMap.get(fileId);
+              if (!fileData) {
+                throw new Error(`File data not found for ${fileId}`);
+              }
+              
+              const content = fileData.content;
+              const format = fileData.metadata.format;
+              
+              // Create a unique cache key for this file
+              const cacheKey = `${fileId}-${format}-${content.length}`;
+
+              // Generate PDF based on format
+              const pdfBytes = format === 'latex' 
+                ? await generatePDFFromLatex(content, cacheKey)
+                : await generatePDFFromMarkdown(content, cacheKey);
+
+              // Return the necessary info for merging
+              completedOperations++;
+              setProcessingProgress(Math.round((completedOperations / totalOperations) * 100));
+              
+              return { pdfBytes, group, type };
+            } catch (error) {
+              console.error(`Error processing ${type} for question ${group.metadata.questionLabel}:`, error);
+              throw new Error(`Failed to process ${type} for question ${group.metadata.questionLabel}`);
+            }
+          });
+        });
+
+        // Wait for the current batch to complete
+        const batchResults = await Promise.all(batchPromises);
+        
+        // Merge the batch results into the PDF
+        for (const result of batchResults) {
+          if (!result) continue;
+          
+          const { pdfBytes } = result;
+          
+          // Load and merge the PDF
+          const pdf = await PDFDocument.load(pdfBytes);
+          const pages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
+          pages.forEach(page => mergedPdf.addPage(page));
         }
       }
 
@@ -344,11 +449,16 @@ const MergeOptionsDialog: React.FC<MergeOptionsDialogProps> = ({
       
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'merged-document.pdf';
+      a.download = 'COMP2011midterm.pdf';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+
+      // Clear the cache to free memory if it gets too large
+      if (pdfCache.size > 50) {
+        pdfCache.clear();
+      }
 
       onClose();
     } catch (error) {
@@ -505,9 +615,12 @@ const MergeOptionsDialog: React.FC<MergeOptionsDialogProps> = ({
             bgcolor: 'rgba(255, 255, 255, 0.8)',
             zIndex: 1
           }}>
-            <CircularProgress />
+            <CircularProgress variant="determinate" value={processingProgress} />
             <Typography sx={{ mt: 2 }}>
-              Generating PDFs...
+              {processingProgress < 100 ? 'Processing documents...' : 'Finalizing PDF...'}
+            </Typography>
+            <Typography variant="caption" sx={{ mt: 1 }}>
+              {processingProgress}% complete
             </Typography>
           </Box>
         )}
